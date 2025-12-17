@@ -84,9 +84,9 @@ class HangerResQubit(Element):
 
 
     #junction
-    pad_width = Param(pdt.TypeDouble, "Width of pad connecting to to circuit", 4, unit="μm")
-    pad_height = Param(pdt.TypeDouble, "Height of pad connecting to to circuit", 5, unit="μm")
-    base_length = Param(pdt.TypeDouble, "Length of junction base", 5, unit="μm")
+    pad_width = Param(pdt.TypeDouble, "Width of pad connecting to to circuit", 6, unit="μm")
+    pad_height = Param(pdt.TypeDouble, "Height of pad connecting to to circuit", 8, unit="μm")
+    base_length = Param(pdt.TypeDouble, "Length of junction base", 8, unit="μm")
     finger_length = Param(pdt.TypeDouble, "Length of junction finger", 3, unit="μm")
     finger_tip_length = Param(pdt.TypeDouble, "Length of junction finger tip", 0.5, unit="μm")
     finger_width = Param(pdt.TypeDouble, "Width of junction finger a.k.a. bridge length", 0.1, unit="μm")

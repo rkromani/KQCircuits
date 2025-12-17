@@ -28,18 +28,19 @@ from kqcircuits.util.symmetric_polygons import polygon_with_vsym, polygon_with_h
 from kqcircuits.defaults import default_layers
 
 
-class RKRBridge(Junction):
+class RKRHook(Junction):
     """The PCell declaration for a test single junction.
     """
-    pad_width = Param(pdt.TypeDouble, "Width of pad connecting to to circuit", 10, unit="μm")
-    pad_height = Param(pdt.TypeDouble, "Height of pad connecting to to circuit", 5, unit="μm")
+    pad_width = Param(pdt.TypeDouble, "Width of pad connecting to the circuit", 10, unit="μm")
+    pad_height = Param(pdt.TypeDouble, "Height of pad connecting to the circuit", 5, unit="μm")
     
-    base_length = Param(pdt.TypeDouble, "Length of junction base", 5, unit="μm")
     
     finger_length = Param(pdt.TypeDouble, "Length of junction finger", 5, unit="μm")
-    finger_tip_length = Param(pdt.TypeDouble, "Length of junction finger tip", 2, unit="μm")
+    finger_tip_length = Param(pdt.TypeDouble, "Length of junction finger tip", 1, unit="μm")
     finger_width = Param(pdt.TypeDouble, "Width of junction finger a.k.a. bridge length", 0.1, unit="μm")
     finger_taper_base_width = Param(pdt.TypeDouble, "Width of junction finger taper at base", 5, unit="μm")
+    finger_spacing = Param(pdt.TypeDouble, "Spacing between junction fingers", 1, unit="μm")
+    overshoot = Param(pdt.TypeDouble, "Amount the hook extends beyond the finger width and finger beyond hook", 0.5, unit="μm")
     
     #bridge_width = Param(pdt.TypeDouble, "Width of bridge connecting junction fingers", 1.5, unit="μm")
     junction_length = Param(pdt.TypeDouble, "Length of junction", 0.1, unit="μm")
@@ -58,9 +59,8 @@ class RKRBridge(Junction):
         default_layers["SIS_junction_area"] = pya.LayerInfo(138, 0, "SIS_junction_area")
 
         angle_extension = self.resist_thickness * np.sin(np.radians(self.shadow_angle_1)) + self.resist_thickness * np.sin(np.radians(self.shadow_angle_2))
-        self.bridge_width = angle_extension - self.junction_length
 
-        self.total_junction_height = self.pad_height + self.base_length + self.finger_length + self.finger_tip_length + self.bridge_width
+        self.total_junction_height = 2*self.pad_height + 2*self.finger_length + 2*self.finger_tip_length - self.overshoot + angle_extension
 
         junction_shape = self.get_junction_shape()
         self.cell.shapes(self.get_layer("SIS_junction")).insert(junction_shape)
@@ -76,7 +76,7 @@ class RKRBridge(Junction):
 
     def get_junction_shape(self):
         finger_shape = self.get_finger_shape()
-        base_shape = self.get_base_shape()
+        base_shape = self.get_base_shape() #base has hook
         return finger_shape + base_shape
     
     def get_junction_shadow(self):
@@ -98,30 +98,41 @@ class RKRBridge(Junction):
         return shadow_1 + shadow_2
     
     def get_finger_shape(self):
+            x_offset = self.finger_spacing/2
             finger_pts = [
                 pya.DPoint(- self.pad_width / 2, self.total_junction_height),
                 pya.DPoint(self.pad_width / 2, self.total_junction_height),
                 pya.DPoint(self.pad_width / 2, self.total_junction_height - self.pad_height),
-                pya.DPoint(self.finger_taper_base_width / 2, self.total_junction_height - self.pad_height),
-                pya.DPoint(self.finger_width / 2, self.total_junction_height - self.pad_height - self.finger_length),
-                pya.DPoint(self.finger_width / 2, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
-                pya.DPoint(- self.finger_width / 2, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
-                pya.DPoint(- self.finger_width / 2, self.total_junction_height - self.pad_height - self.finger_length),
-                pya.DPoint(- self.finger_taper_base_width / 2, self.total_junction_height - self.pad_height),
+                pya.DPoint(self.finger_taper_base_width / 2 - x_offset, self.total_junction_height - self.pad_height),
+                pya.DPoint(self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length),
+                pya.DPoint(self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
+                pya.DPoint(self.finger_width / 2 + x_offset + self.overshoot, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
+                pya.DPoint(self.finger_width / 2 + x_offset + self.overshoot, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length - self.finger_width),
+                pya.DPoint(- self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length - self.finger_width),
+                pya.DPoint(- self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
+                pya.DPoint(- self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length),
+                pya.DPoint(- self.finger_taper_base_width / 2 - x_offset, self.total_junction_height - self.pad_height),
                 pya.DPoint(- self.pad_width / 2, self.total_junction_height - self.pad_height),
             ] 
 
             return pya.Region(pya.DPolygon(finger_pts).to_itype(self.layout.dbu))
 
     def get_base_shape(self):
-            base_pts = [
+            x_offset = -self.finger_spacing/2
+            hook_pts = [
                 pya.DPoint(- self.pad_width / 2, 0),
                 pya.DPoint(self.pad_width / 2, 0),
-                pya.DPoint(self.pad_width / 2, self.base_length),
-                pya.DPoint(- self.pad_width / 2, self.base_length),
+                pya.DPoint(self.pad_width / 2, self.pad_height),
+                pya.DPoint(self.finger_taper_base_width / 2 - x_offset, self.pad_height),
+                pya.DPoint(self.finger_width / 2 - x_offset, self.pad_height + self.finger_length),
+                pya.DPoint(self.finger_width / 2 - x_offset, self.pad_height + self.finger_length + self.finger_tip_length),
+                pya.DPoint(- self.finger_width / 2 - x_offset, self.pad_height + self.finger_length + self.finger_tip_length),
+                pya.DPoint(- self.finger_width / 2 - x_offset, self.pad_height + self.finger_length),
+                pya.DPoint(- self.finger_taper_base_width / 2 - x_offset, self.pad_height),
+                pya.DPoint(- self.pad_width / 2, self.pad_height),
             ] 
 
-            return pya.Region(pya.DPolygon(base_pts).to_itype(self.layout.dbu))
+            return pya.Region(pya.DPolygon(hook_pts).to_itype(self.layout.dbu))
     
     def get_t_cut_shape(self):
         t_cut_body_y_top = self.total_junction_height - self.t_cut_distance_from_back
