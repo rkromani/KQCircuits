@@ -49,9 +49,9 @@ class RKRHook(Junction):
     shadow_angle_2 = Param(pdt.TypeDouble, "Angle of shadow 2", 0, unit="deg")
     resist_thickness = Param(pdt.TypeDouble, "Thickness of resist", 3, unit="μm")
 
-    t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 2, unit="μm")
+    t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 4, unit="μm")
     t_cut_distance_from_back = Param(pdt.TypeDouble, "Distance of T-cut from back of Al deposition", 1, unit="μm")
-    t_cut_t_width = Param(pdt.TypeDouble, "Width of T-cut T", 4, unit="μm")
+    t_cut_t_width = Param(pdt.TypeDouble, "Width of T-cut T", 6, unit="μm")
     t_cut_t_height = Param(pdt.TypeDouble, "Height of T-cut T", 2, unit="μm")
 
     def build(self, **kwargs):

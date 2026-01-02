@@ -26,6 +26,7 @@ from kqcircuits.elements.element import Element
 #from kqcircuits.junctions.manhattan_single_junction import ManhattanSingleJunction
 #from kqcircuits.junctions.overlap_junction2 import Overlap2
 from kqcircuits.junctions.rkr_bridge_junction import RKRBridge
+from kqcircuits.junctions.rkr_hook_junction import RKRHook
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from
 #from kqcircuits.qubits.qubit import Qubit
 from kqcircuits.pya_resolver import pya
@@ -115,37 +116,17 @@ class HangerResQubit(Element):
         angle_extension = 2*self.resist_thickness * np.sin(np.radians(self.shadow_angle))
         self.bridge_width = angle_extension - self.junction_length
         self.total_junction_height = self.pad_height + self.base_length + self.finger_length + self.finger_tip_length + self.bridge_width
-        self.pad_to_pad_separation = self.total_junction_height #- self.pad_height/2 - self.base_length/2
-
-        #taper_height = (self.island_island_gap - squid_height) / 2
+        self.pad_to_pad_separation = self.total_junction_height
 
         # Qubit region
         q_region = self._build_qubit()
 
-        junction_offset = self.total_junction_height/2 #+ self.bridge_width / 2
-
-        q_island_centery = self.ground_gap[1] / 2 - self.q_island_ground_spacing_top - self.q_island_extent[1]/2
-        q_junction_centerx = (self.ground_gap[0] / 2 - self.q_island_extent[0]/2)/2 + self.q_island_extent[0]/2
-        self.insert_cell(
-            RKRBridge, pya.DTrans(1, False, q_junction_centerx + junction_offset, q_island_centery), f"JQ_",
-            pad_width=self.pad_width, pad_height=self.pad_height, base_length=self.base_length,
-            finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
-            finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
-            shadow_angle=self.shadow_angle, resist_thickness=self.resist_thickness
-        )
-
         # Resonator region
         r_region = self._build_resonator()
 
-        res_island_centery = self.ground_gap[1] / 2 - self.q_island_ground_spacing_top - self.q_island_extent[1] - self.q_island_res_spacing- self.r_island_extent[1]/2
-        res_junction_centerx = (self.ground_gap[0] / 2 - self.r_island_extent[0]/2)/2 + self.r_island_extent[0]/2
-        self.insert_cell(
-            RKRBridge, pya.DTrans(1, False, res_junction_centerx + junction_offset, res_island_centery), f"JR_", 
-            pad_width=self.pad_width, pad_height=self.pad_height, base_length=self.base_length,
-            finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
-            finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
-            shadow_angle=self.shadow_angle, resist_thickness=self.resist_thickness
-        )
+        #makes junctions, comment out one or the other 
+        #self._build_junction_bridge()
+        self._build_junction_hook()
 
         # Feedline region
         f_region = self._build_feedline()
@@ -283,6 +264,52 @@ class HangerResQubit(Element):
 
 
         return island_region + island_taper2
+    
+    def _build_junction_bridge(self):
+        junction_offset = self.total_junction_height/2 #+ self.bridge_width / 2
+
+        q_island_centery = self.ground_gap[1] / 2 - self.q_island_ground_spacing_top - self.q_island_extent[1]/2
+        q_junction_centerx = (self.ground_gap[0] / 2 - self.q_island_extent[0]/2)/2 + self.q_island_extent[0]/2
+        self.insert_cell(
+            RKRBridge, pya.DTrans(1, False, q_junction_centerx + junction_offset, q_island_centery), f"JQ_",
+            pad_width=self.pad_width, pad_height=self.pad_height, base_length=self.base_length,
+            finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
+            finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
+            shadow_angle=self.shadow_angle, resist_thickness=self.resist_thickness
+        )
+
+        res_island_centery = self.ground_gap[1] / 2 - self.q_island_ground_spacing_top - self.q_island_extent[1] - self.q_island_res_spacing- self.r_island_extent[1]/2
+        res_junction_centerx = (self.ground_gap[0] / 2 - self.r_island_extent[0]/2)/2 + self.r_island_extent[0]/2
+        self.insert_cell(
+            RKRBridge, pya.DTrans(1, False, res_junction_centerx + junction_offset, res_island_centery), f"JR_", 
+            pad_width=self.pad_width, pad_height=self.pad_height, base_length=self.base_length,
+            finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
+            finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
+            shadow_angle=self.shadow_angle, resist_thickness=self.resist_thickness
+        )
+
+    def _build_junction_hook(self):
+        junction_offset = self.total_junction_height/2 #+ self.bridge_width / 2
+
+        q_island_centery = self.ground_gap[1] / 2 - self.q_island_ground_spacing_top - self.q_island_extent[1]/2
+        q_junction_centerx = (self.ground_gap[0] / 2 - self.q_island_extent[0]/2)/2 + self.q_island_extent[0]/2
+        self.insert_cell(
+            RKRHook, pya.DTrans(1, False, q_junction_centerx + junction_offset, q_island_centery), f"JQ_",
+            pad_width=self.pad_width, pad_height=self.pad_height, base_length=self.base_length,
+            finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
+            finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
+            shadow_angle=self.shadow_angle, resist_thickness=self.resist_thickness
+        )
+
+        res_island_centery = self.ground_gap[1] / 2 - self.q_island_ground_spacing_top - self.q_island_extent[1] - self.q_island_res_spacing- self.r_island_extent[1]/2
+        res_junction_centerx = (self.ground_gap[0] / 2 - self.r_island_extent[0]/2)/2 + self.r_island_extent[0]/2
+        self.insert_cell(
+            RKRHook, pya.DTrans(1, False, res_junction_centerx + junction_offset, res_island_centery), f"JR_", 
+            pad_width=self.pad_width, pad_height=self.pad_height, base_length=self.base_length,
+            finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
+            finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
+            shadow_angle=self.shadow_angle, resist_thickness=self.resist_thickness
+        )
 
     def _build_resonator(self):
         island_centery = self.ground_gap[1] / 2 - self.q_island_ground_spacing_top - self.q_island_extent[1] - self.q_island_res_spacing- self.r_island_extent[1]/2
@@ -350,9 +377,6 @@ class HangerResQubit(Element):
         coupling_center_ground_step = self.a/2 + self.r_inductor_coupling_spacing
         ground_i_stepout = res_i_ground_x - (self.r_inductor_coupling_length/2 + self.r_inductor_r)
         island_i_stepout = -res_i_island_x + (-self.r_inductor_coupling_length/2 - self.r_inductor_r)
-        #length_var = self.r_inductor_length - (self.r_inductor_coupling_length + self.r_inductor_r*np.pi - ground_i_stepout - island_i_stepout)
-        #length_g_side_var = (length_var - self.r_inductor_ground_junction_sep)/2
-        #length_i_side_var = (length_var + self.r_inductor_ground_junction_sep)/2
 
         inductor_wire_poly_1= pya.DPolygon(
             [
@@ -408,24 +432,6 @@ class HangerResQubit(Element):
         inductor_wire.round_corners(self.r_inductor_r / self.layout.dbu, self.r_inductor_r / self.layout.dbu + self.r_inductor_width / self.layout.dbu, self.n)
     
         
-        #self.insert_cell(
-        #        WaveguideComposite,
-        #        nodes = [
-        #            Node((res_i_ground_x, res_i_ground_y)), 
-        #            Node((self.r_inductor_coupling_length/2 + self.r_inductor_r, res_i_ground_y)), 
-        #            Node((self.r_inductor_coupling_length/2 + self.r_inductor_r, -self.ground_gap[1]/2 + coupling_center_ground_step), 
-        #                 length_before=length_g_side_var),
-        #            Node((-self.r_inductor_coupling_length/2 - self.r_inductor_r, -self.ground_gap[1]/2 + coupling_center_ground_step)),
-        #            Node((-self.r_inductor_coupling_length/2 - self.r_inductor_r, res_i_island_y), 
-        #                 length_before=length_i_side_var),
-        #            Node((res_i_island_x, res_i_island_y)),
-        #        ], 
-        #        r=self.r_inductor_r, 
-        #        #add_metal=True,
-        #        #ground_grid_in_trace=True
-        #    )
-
-
         return island_region + island_taper2 + inductor_wire
 
 
