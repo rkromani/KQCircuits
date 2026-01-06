@@ -30,7 +30,7 @@ from kqcircuits.pya_resolver import pya
 from kqcircuits.util.refpoints import WaveguideToSimPort, JunctionSimPort
 
 
-class BiasedResonator(Qubit):
+class BiasedResonatora(Qubit):
     """
     A biased resonator, where most of the capacitance to ground is through an electrode close to the main resonator that
     can be biased, but can be connected to ground with a large capacitance added at the chip level.
