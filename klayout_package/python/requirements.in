@@ -1,6 +1,6 @@
 klayout
-numpy==2.2.6
-scipy==1.15.3
+scipy>=1.15.0
+numpy>=2.2.0
 tqdm
 versiontag
 networkx

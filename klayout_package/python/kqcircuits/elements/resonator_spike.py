@@ -31,7 +31,7 @@ class ResonatorSpike(Element):
     feedline_length = Param(pdt.TypeDouble, "Feedline length", 700, unit="μm")
     feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 10, unit="μm")
 
-    l_width = Param(pdt.TypeDouble, "Inductor width", 4, unit="μm")
+    l_width = Param(pdt.TypeDouble, "Inductor width", 3, unit="μm")
     l_coupling_length = Param(pdt.TypeDouble, "Inductor coupling length", 250, unit="μm")
     l_coupling_distance = Param(pdt.TypeDouble, "Inductor coupling distance", 16, unit="μm")
     l_height = Param(pdt.TypeDouble, "Inductor height", 500, unit="μm")
@@ -42,16 +42,16 @@ class ResonatorSpike(Element):
     end_box_buffer = Param(pdt.TypeDouble, "End box buffer", 2.5, unit="μm")
     end_box_spacing = Param(pdt.TypeDouble, "End box spacing from bottom of ground gap box", 20, unit="μm")
 
-    t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 4, unit="μm")
+    t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 3, unit="μm")
     t_cut_distance_from_edge = Param(pdt.TypeDouble, "Distance of T-cut from edge of optical layer", 3, unit="μm")
-    t_cut_t_width = Param(pdt.TypeDouble, "Width of T-cut T", 8, unit="μm")
+    t_cut_t_width = Param(pdt.TypeDouble, "Width of T-cut T", 6, unit="μm")
     t_cut_t_height = Param(pdt.TypeDouble, "Height of T-cut T", 3, unit="μm")
     t_cut_number = Param(pdt.TypeInt, "Number of T-cuts", 2)
     t_cut_radius = Param(pdt.TypeDouble, "Radius of T-cut corners", 2, unit="μm")
     
-    spike_height = Param(pdt.TypeDouble, "Spike height", 5, unit="μm")
-    spike_gap = Param(pdt.TypeDouble, "Spike gap", 0.05, unit="μm")
-    spike_base_width = Param(pdt.TypeDouble, "Spike base width", 5, unit="μm")
+    spike_height = Param(pdt.TypeDouble, "Spike height", 1.5, unit="μm")
+    spike_gap = Param(pdt.TypeDouble, "Spike gap", 0.1, unit="μm")
+    spike_base_width = Param(pdt.TypeDouble, "Spike base width", 1, unit="μm")
     spike_base_height = Param(pdt.TypeDouble, "Spike base height", 10, unit="μm")
     spike_number = Param(pdt.TypeInt, "Number of spikes", 8)
     
@@ -90,11 +90,11 @@ class ResonatorSpike(Element):
         inductor_region = self._make_inductor() 
         end_box_region = self._make_end_box()
         feedline_region = self._make_feedline()
-        t_cut_region = self._make_t_cuts()
-
-        self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
-            ground_gap_region + feedline_region - inductor_region - end_box_region + t_cut_region
-        )
+        
+        if self.spike_number != 0:
+            t_cut_region = self._make_t_cuts()
+        else:
+            t_cut_region = pya.Region()
         
         spikes_shape = self._make_spikes_shape()
         self.cell.shapes(self.get_layer("SIS_junction")).insert(spikes_shape)
@@ -104,7 +104,23 @@ class ResonatorSpike(Element):
 
         spikes_combined = (spikes_shape + spikes_shadow).merge()
         self.cell.shapes(self.get_layer("SIS_junction_2")).insert(
+            spikes_combined
+        )
+
+        self.cell.shapes(self.get_layer("base_metal_gap")).insert(
+            ground_gap_region + feedline_region - inductor_region - end_box_region + t_cut_region
+        )
+        self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
             ground_gap_region + feedline_region - inductor_region - end_box_region + t_cut_region - spikes_combined
+        )
+
+        spikes_meshing_region = self._make_meshing_region()
+        self.cell.shapes(self.get_layer("airbridge_pads")).insert(
+            spikes_meshing_region
+        )
+        self.cell.shapes(self.get_layer("airbridge_flyover")).insert(
+            inductor_region
+
         )
         
 
@@ -265,7 +281,7 @@ class ResonatorSpike(Element):
 
         t_cut_center_y_list = np.zeros(self.t_cut_number)
         for i in range(self.t_cut_number):
-            t_cut_center_y_list[i] = self.end_box_bottom + self.end_box_buffer + (i + 0.5) * (self.end_box_height / self.t_cut_number)
+            t_cut_center_y_list[i] = self.end_box_bottom + self.end_box_buffer + (i + 0.5) * ((self.end_box_height - 2*self.end_box_buffer) / self.t_cut_number)
 
         i = 0
         while i < self.t_cut_number:
@@ -313,4 +329,25 @@ class ResonatorSpike(Element):
         t_cut_region.round_corners(self.t_cut_radius / self.layout.dbu, self.t_cut_radius / self.layout.dbu, self.n)
 
         return t_cut_region
-    
+
+    def _make_meshing_region(self):
+        buffer = 0.25*self.spike_region_width
+        
+        pts_l = [
+                pya.DPoint(self.end_box_left + buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, self.end_box_top),
+                pya.DPoint(self.end_box_left + buffer, self.end_box_top),
+                ]
+        region_l = pya.Region(pya.DPolygon(pts_l).to_itype(self.layout.dbu))
+
+        pts_r = [
+                pya.DPoint(self.end_box_right - buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, self.end_box_top),
+                pya.DPoint(self.end_box_right - buffer, self.end_box_top),
+                ]
+        region_r = pya.Region(pya.DPolygon(pts_r).to_itype(self.layout.dbu))
+        
+
+        return region_r + region_l
