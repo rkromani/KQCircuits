@@ -21,6 +21,7 @@ from kqcircuits.elements.element import Element
 from kqcircuits.pya_resolver import pya
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
+from kqcircuits.junctions.rkr_hook_junction import RKRHook
 
 import numpy as np
 
@@ -56,6 +57,11 @@ class ResonatorSpike(Element):
     spike_base_width = Param(pdt.TypeDouble, "Spike base width", 1, unit="μm")
     spike_base_height = Param(pdt.TypeDouble, "Spike base height", 10, unit="μm")
     spike_number = Param(pdt.TypeInt, "Number of spikes", 8)
+
+    junction_bool = Param(pdt.TypeBoolean, "Whether to add junction", True)
+    include_inductor = Param(pdt.TypeBoolean, "Include inductor (disable for Q3D capacitance measurements)", True)
+    total_junction_height = Param(pdt.TypeDouble, "Total junction height", 20, unit="μm", readonly=True)
+
     
     shadow_angle_1 = Param(pdt.TypeDouble, "Angle of shadow 1", 30, unit="deg")
     shadow_angle_2 = Param(pdt.TypeDouble, "Angle of shadow 2", 0, unit="deg")
@@ -87,11 +93,19 @@ class ResonatorSpike(Element):
             pya.DPoint(self.ground_gap_right, self.ground_gap_top),
         ]
         ground_gap_region = pya.Region(pya.DPolygon(pts).to_itype(self.layout.dbu))
-        
 
-        inductor_region = self._make_inductor() 
+
+        # Conditionally create inductor region based on include_inductor flag
+        if self.include_inductor:
+            inductor_region = self._make_inductor()
+        else:
+            inductor_region = pya.Region()  # Empty region for Q3D capacitance measurements
+
         end_box_region = self._make_end_box()
         feedline_region = self._make_feedline()
+
+        if self.junction_bool:
+            self._make_junction()
         
         if self.spike_number != 0:
             t_cut_region = self._make_t_cuts()
@@ -118,14 +132,16 @@ class ResonatorSpike(Element):
 
         # Add mesh control regions for fine-grained ANSYS mesh refinement
         # mesh_1: Fine mesh around spike regions
-        # mesh_2: Coarse mesh for inductor region
         spikes_meshing_region = self._make_meshing_region()
         self.cell.shapes(self.get_layer("mesh_1")).insert(
             spikes_meshing_region
         )
-        self.cell.shapes(self.get_layer("mesh_2")).insert(
-            inductor_region
-        )
+
+        # mesh_2: Coarse mesh for inductor region (only when inductor is included)
+        if self.include_inductor:
+            self.cell.shapes(self.get_layer("mesh_2")).insert(
+                inductor_region
+            )
         
 
         # add reference point
@@ -157,10 +173,15 @@ class ResonatorSpike(Element):
         return ind_region
     
     def _make_end_box(self):
+
+        if self.junction_bool:
+            top_addition = self.l_junction_width
+        else:
+            top_addition = 0
         
         pts_end_box = [
-            pya.DPoint(self.end_box_left, self.end_box_top),
-            pya.DPoint(self.end_box_right, self.end_box_top),
+            pya.DPoint(self.end_box_left, self.end_box_top + top_addition),
+            pya.DPoint(self.end_box_right, self.end_box_top + top_addition),
             pya.DPoint(self.end_box_right, self.end_box_bottom),
             pya.DPoint(self.end_box_left, self.end_box_bottom),
         ]
@@ -168,10 +189,10 @@ class ResonatorSpike(Element):
         end_box_region = pya.Region(pya.DPolygon(pts_end_box).to_itype(self.layout.dbu))
 
         pts_boxes_l = [
-            pya.DPoint(self.end_box_left - self.spike_region_width, self.end_box_top),
+            pya.DPoint(self.end_box_left - self.spike_region_width, self.end_box_top + top_addition),
             pya.DPoint(self.end_box_left - self.spike_region_width, self.ground_gap_bottom),
             pya.DPoint(self.end_box_left - self.spike_region_width - self.end_box_width, self.ground_gap_bottom),
-            pya.DPoint(self.end_box_left - self.spike_region_width - self.end_box_width, self.end_box_top),
+            pya.DPoint(self.end_box_left - self.spike_region_width - self.end_box_width, self.end_box_top + top_addition),
         ]
 
         pts_boxes_r = [
@@ -337,6 +358,19 @@ class ResonatorSpike(Element):
         t_cut_region.round_corners(self.t_cut_radius / self.layout.dbu, self.t_cut_radius / self.layout.dbu, self.n)
 
         return t_cut_region
+    
+    def _make_junction(self):
+        junction_offset = self.total_junction_height/2
+        junction_centerx = self.l_coupling_length/2 - self.end_box_width - self.spike_region_width/2
+        junction_centery = self.end_box_top + self.l_junction_width/2
+
+        self.insert_cell(
+            RKRHook, pya.DTrans(3, False, junction_centerx - junction_offset, junction_centery), f"JQ_",
+            pad_width=self.l_junction_width*0.75, #pad_height=self.pad_height, base_length=self.base_length,
+            #finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
+            #finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
+            shadow_angle=self.shadow_angle_1, resist_thickness=self.resist_thickness
+        )
 
     def _make_meshing_region(self):
         buffer = 0.25*self.spike_region_width
