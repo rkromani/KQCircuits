@@ -814,6 +814,26 @@ class Simulation:
                 )
                 self.insert_layer(face_id + "_airbridge_pads", ab_pads_region, z[face_id][1], bridge_z, material="pec")
 
+                # Insert custom mesh control regions (vacuum, zero thickness, no partitioning)
+                # These layers define regions for fine-grained mesh refinement without affecting simulation physics
+                # material=None prevents partitioning by produce_layers(), preserving original rectangular regions
+                for mesh_num in range(1, 6):
+                    mesh_layer_name = f"mesh_{mesh_num}"
+                    mesh_region = (
+                        self.simplified_region(self.region_from_layer(face_id, mesh_layer_name)) & face_box_region
+                    )
+                    if not mesh_region.is_empty():
+                        self.insert_layer(
+                            f"{face_id}_{mesh_layer_name}",
+                            mesh_region,
+                            z[face_id][0],  # At conductor surface
+                            z[face_id][0],  # Zero thickness (infinitely thin sheet)
+                            material=None,  # Non-model object, skips partitioning in produce_layers()
+                        )
+                        # Clear the original element layer to avoid duplication in exports
+                        element_layer_idx = self.get_layer(mesh_layer_name, face_id)
+                        self.cell.shapes(element_layer_idx).clear()
+
             self.insert_stacked_up_layers(stack, z[i + 1])
 
             # Rest of the features are not available with multilayer stack-up
@@ -1111,6 +1131,54 @@ class Simulation:
                     logging.warning(
                         f"Layer '{name}' of simulation '{self.name}' contains a small shape of {round(area, 3)} µm² "
                         f"with bounding box {shape.dbbox()}."
+                    )
+
+    def warn_mesh_layer_issues(self, mesh_size_dict=None):
+        """Warns about common issues with mesh control layers.
+
+        Args:
+            mesh_size_dict: Optional dictionary from export parameters containing mesh_size entries
+        """
+        # Check for mesh layers outside simulation box
+        sim_box = pya.Region(self.box.to_itype(self.layout.dbu))
+        for name, layer in self.layers.items():
+            # Check if this is a mesh control layer
+            if any(f"_mesh_{i}" in name for i in range(1, 6)):
+                if "layer" not in layer:
+                    # Layer was not exported (outside simulation box or became empty)
+                    logging.warning(
+                        f"Mesh control layer '{name}' was not exported. "
+                        f"Ensure geometry is within simulation box: {self.box}"
+                    )
+                else:
+                    # Check if mesh region extends beyond simulation box
+                    shapes = self.cell.shapes(self.layout.layer(layer["layer"], 0))
+                    for shape in shapes.each():
+                        shape_region = pya.Region(shape.polygon)
+                        if not (shape_region - sim_box).is_empty():
+                            logging.warning(
+                                f"Mesh control layer '{name}' has geometry outside simulation box. "
+                                f"Shape bbox: {shape.dbbox()}, Simulation box: {self.box}"
+                            )
+                            break  # Only warn once per layer
+
+        # Check for unused mesh_size entries
+        if mesh_size_dict:
+            import re
+
+            def match_layer_pattern(layer_name, layer_pattern):
+                """Return True if layer name matches pattern (glob-style), else return False."""
+                pattern = "^" + str(re.escape(layer_pattern).replace(r"\*", ".*")) + "$"
+                return bool(re.match(pattern, layer_name))
+
+            exported_mesh_layers = {name for name in self.layers.keys() if any(f"_mesh_{i}" in name for i in range(1, 6))}
+            for mesh_pattern in mesh_size_dict.keys():
+                # Check if pattern matches any exported layer
+                matching_layers = [name for name in exported_mesh_layers if match_layer_pattern(name, mesh_pattern)]
+                if not matching_layers:
+                    logging.warning(
+                        f"mesh_size entry '{mesh_pattern}' does not match any exported mesh layer. "
+                        f"Available mesh layers: {sorted(exported_mesh_layers) if exported_mesh_layers else 'none'}"
                     )
 
     def ground_grid_region(self, face_id):
@@ -1429,7 +1497,7 @@ class Simulation:
 
     def get_layers(self):
         """Returns simulation layer numbers in list. Only return layers that are in use."""
-        return [pya.LayerInfo(d["layer"], 0) for d in self.layers.values() if "layer" in d]
+        return [get_simulation_layer_by_name(name) for name, d in self.layers.items() if "layer" in d]
 
     def get_partition_regions(self):
         """Returns partition regions for the simulation instance.

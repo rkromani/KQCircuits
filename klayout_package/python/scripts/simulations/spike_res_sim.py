@@ -47,16 +47,18 @@ parser.add_argument("--no-gui", action="store_true",
 args = parser.parse_args()
 
 # Prepare output directory
-dir_path = create_or_empty_tmp_directory(Path(__file__).stem + "_spike_length_output")
+dir_path = create_or_empty_tmp_directory(Path(__file__).stem + "_spike_number_output")
 
-# Create custom simulation class that fixes airbridge_pads layer for meshing control
+# OLD APPROACH: Custom simulation class (now replaced by core KQCircuits mesh layer support)
+# Kept here for reference - can be removed once new approach is fully validated
+"""
 BaseSimClass = get_single_element_sim_class(ResonatorSpike)
 
 class ResonatorSpikeMeshingSim(BaseSimClass):
-    """Custom simulation class that sets airbridge layers as infinitely thin vacuum sheets for mesh control."""
+    # Custom simulation class that sets airbridge layers as infinitely thin vacuum sheets for mesh control.
 
     def produce_layers(self, parts):
-        """Override to modify airbridge layers for mesh control and preserve their original regions."""
+        # Override to modify airbridge layers for mesh control and preserve their original regions.
         # Save original regions for airbridge layers before produce_layers partitions them
         # This prevents the rectangular meshing regions from being clipped by gap intersections
         original_regions = {}
@@ -96,21 +98,30 @@ class ResonatorSpikeMeshingSim(BaseSimClass):
                 shapes = self.cell.shapes(self.layout.layer(sim_layer))
                 shapes.clear()
                 shapes.insert(original_region)
+
+                # Remove excitation and background properties that cause boundary conditions
+                # These layers should be unassigned mesh control regions only
+                layer_data = self.layers[layer_name]
+                layer_data.pop("excitation", None)
+                layer_data.pop("background", None)
             else:
                 # Layer was removed by produce_layers (region became empty after partitioning)
                 # Re-add it manually for mesh control
                 sim_layer = get_simulation_layer_by_name(layer_name)
                 shapes = self.cell.shapes(self.layout.layer(sim_layer))
                 shapes.insert(original_region)
-                # Re-add to self.layers with proper format
+                # Re-add to self.layers with proper format (no excitation or background)
                 self.layers[layer_name] = {
                     "z": 0.0,
                     "thickness": 0.0,
                     "layer": sim_layer.layer,
                     "material": "vacuum",
                 }
+"""
 
-SimClass = ResonatorSpikeMeshingSim
+# NEW APPROACH: Use standard simulation class
+# Mesh control regions (mesh_1, mesh_2, etc.) are now automatically processed by KQCircuits core
+SimClass = get_single_element_sim_class(ResonatorSpike)
 
 use_latin_sampling = False
 # Simulation parameters, using multiface interdigital as starting point
@@ -120,14 +131,15 @@ sim_parameters = {
     #"basis_order": -1, 
     "use_internal_ports": True,
     "use_ports": True,
-    "box": pya.DBox(pya.DPoint(0, -700), pya.DPoint(1000, 2000)),  # Extended to include inductor region
+    "box": pya.DBox(pya.DPoint(0, -700), pya.DPoint(1000, 3000)),  # Extended to include inductor region
     "port_size": 200,
     "shadow_angle_1": 0, 
     "shadow_angle_2": 0, 
     "spike_number": 50, 
-    #"spike_height": 0.5,
+    "spike_height": 0.5,
     "spike_base_width": 0.25,
-    "l_height": 600,
+    "end_box_buffer": 100,
+    "l_height": 1600,
     "spike_gap": 0.1,
     "face_stack": ["1t1"],
 }
@@ -142,19 +154,20 @@ export_parameters = {
     #"post_process": PostProcess("produce_cmatrix_table.py"),
     "exit_after_run": True,
     #"percent_error": 3,
-    'max_delta_f': 5,
+    'max_delta_f': 1, #percent
     "minimum_converged_passes": 3,
     "maximum_passes": 30,
     #"mesh_size": {"1t1_gap": 15,},
-    # Custom mesh refinement using airbridge_pads and airbridge_flyover layers
-    # These layers are automatically extracted from ResonatorSpike geometry and exported to ANSYS
+    # Custom mesh refinement using dedicated mesh control layers
+    # mesh_1 and mesh_2 are automatically extracted from ResonatorSpike geometry and exported to ANSYS
+    # These layers are vacuum, zero-thickness sheets that only affect mesh refinement
     # To verify export is working:
-    #   1. Check the generated .oas file in KLayout - look for airbridge_pads layer
-    #   2. Check the .json file for "1t1_airbridge_pads" entry with "layer" key
-    #   3. In ANSYS, check if 1t1_airbridge_pads objects exist in 3D Modeler
+    #   1. Check the generated .oas file in KLayout - look for mesh_1 and mesh_2 layers
+    #   2. Check the .json file for "1t1_mesh_1" and "1t1_mesh_2" entries with "layer" key
+    #   3. In ANSYS, check if 1t1_mesh_* objects exist in 3D Modeler
     #   4. Verify mesh refinement is applied in the solution setup
-    "mesh_size": {"1t1_airbridge_pads": 1,    # Fine mesh around spike regions (0.2 µm)
-                  "1t1_airbridge_flyover": 6,   # Coarse mesh for inductor region (3 µm)
+    "mesh_size": {"1t1_mesh_1": 1,    # Fine mesh around spike regions (1 µm)
+                  "1t1_mesh_2": 6,   # Coarse mesh for inductor region (6 µm)
                   },
 }
 
@@ -169,79 +182,21 @@ layout = get_active_or_new_layout()
 
 # Cross sweep number of fingers and finger length
 simulations = []
-if use_latin_sampling:
-    # Multi face finger (interdigital) capacitor sweeps
-    keys = ["chip_distance", "finger_number", "finger_length"]
-    l_bounds = [4, 2, 0]
-    u_bounds = [22, 8, 100]
-    samples = latin_hypercube_sampling(l_bounds, u_bounds, n=100, integers=True, add_edges=True).tolist()
-    simulations += combine_sweep_simulation(layout, SimClass, sim_parameters, keys, samples)
-else:
-    # Multi face finger (interdigital) capacitor sweeps
-    simulations += cross_sweep_simulation(
-        layout,
-        SimClass,
-        sim_parameters,
-        {
-            # "l_height": inductor_heights,
-            #"l_width": inductor_widths,
-            #"spike_gap": spike_spacing,
-            #"spike_number": [50, 100, 200, 300, 400, 500], 
-            #"l_coupling_distance": [10, 16, 20, 30, 50, 100], 
-            "spike_height": [0.125, 0.25, 0.5, 1, 2]
-        },
-    )
-
-# Note: airbridge_pads layer from ResonatorSpike is automatically processed by KQCircuits
-# during create_simulation_layers() and exported to ANSYS for mesh refinement.
-# See mesh_size parameter in export_parameters for mesh control.
-
-# Multi face gap capacitor sweeps
-#simulations += cross_sweep_simulation(
-#    layout,
-#    SimClass,
-#    {
-#        **sim_parameters,
-#        "name": sim_parameters["name"] + "_gap",
-#        **gap_parameters,
-#    },
-#    {
-#        "chip_distance": chip_distances,
-#        "finger_gap_end": gap_lengths,
-#    },
-#)
-
-
-# Single face finger (interdigital) capacitor sweeps
-"""simulations += cross_sweep_simulation(
+# Multi face finger (interdigital) capacitor sweeps
+simulations += cross_sweep_simulation(
     layout,
     SimClass,
+    sim_parameters,
     {
-        **sim_parameters,
-        "name": sim_parameters["name"] + "_singleface",
-        "face_stack": ["1t1"],
-    },
-    {
-        "finger_number": finger_numbers,
-        "finger_length": finger_lengths,
-    },
-)"""
-
-# Single face gap capacitor sweeps
-"""simulations += cross_sweep_simulation(
-    layout,
-    SimClass,
-    {
-        **sim_parameters,
-        "name": sim_parameters["name"] + "_singleface_gap",
-        "face_stack": ["1t1"],
-        **gap_parameters,
-    },
-    {
-        "finger_gap_end": gap_lengths,
+        # "l_height": inductor_heights,
+        #"l_width": inductor_widths,
+        #"spike_gap": spike_spacing,
+        "spike_number": [50, 100, 200, 300, 400, 500], 
+        #"l_coupling_distance": [10, 16, 20, 30, 50, 100], 
+        #"spike_height": [0.125, 0.25, 0.5, 1, 2]
     },
 )
-"""
+
 # Export Ansys files
 export_ansys(simulations, **export_parameters)
 

@@ -36,7 +36,7 @@ from kqcircuits.util.export_helper import (
 )
 
 
-sim_tools = ["elmer", "eigenmode", "q3d"]
+sim_tools = ["eigenmode", "q3d"]
 
 for sim_tool in sim_tools:
     # Simulation parameters
@@ -57,7 +57,7 @@ for sim_tool in sim_tools:
     # Add eigenmode and Q3D specific settings
     # fmt: off
     export_parameters_ansys = {
-        'percent_error': 0.2,
+        'percent_error': 0.5,
         'maximum_passes': 18,
         'minimum_passes': 2,
         'minimum_converged_passes': 2,
@@ -71,7 +71,7 @@ for sim_tool in sim_tools:
         'minimum_converged_passes': 2,
 
         # lossy eigenmode simulation settings
-        'n_modes': 1,
+        'n_modes': 2,
         'min_frequency': 0.5,  # minimum allowed eigenfrequency
         'simulation_flags': ['pyepr'],
 
@@ -186,4 +186,4 @@ for sim_tool in sim_tools:
         export_ansys(simulations, **export_parameters_ansys)
 
 logging.info(f"Total simulations: {len(simulations)}")
-open_with_klayout_or_default_application(oas)
+#open_with_klayout_or_default_application(oas)

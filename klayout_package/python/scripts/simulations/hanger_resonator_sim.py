@@ -77,7 +77,7 @@ sim_parameters = {
     "ground_width": 10,
 }
 
-use_elmer = True
+use_elmer = False
 wave_equation = True
 interpolating_sweep = True
 use_sbatch = args.use_sbatch

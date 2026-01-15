@@ -187,6 +187,10 @@ def export_ansys(
     for sim_sol in simulations:
         simulation, solution = sim_sol if isinstance(sim_sol, Sequence) else (sim_sol, common_sol)
         validate_simulation(simulation, solution)
+        # Validate mesh control layers if they exist
+        if hasattr(simulation, 'warn_mesh_layer_issues'):
+            mesh_size = solution.mesh_size if hasattr(solution, 'mesh_size') else None
+            simulation.warn_mesh_layer_issues(mesh_size)
         try:
             json_filenames.append(export_ansys_json(simulation, solution, path))
         except (IndexError, ValueError, Exception) as e:  # pylint: disable=broad-except

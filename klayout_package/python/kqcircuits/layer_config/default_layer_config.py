@@ -84,6 +84,14 @@ _common_b_t_layers = {
     "through_silicon_via_avoidance": (25, 1),  # TSV
     # Netlist
     "ports": (26, 1),  # Considered conductive in the netlist extraction
+    # Mesh control layers for ANSYS/Elmer simulation refinement
+    # These layers define regions for fine-grained mesh control without affecting simulation physics
+    # Exported as vacuum, zero-thickness sheets for mesh refinement only
+    "mesh_1": (27, 1),  # Mesh refinement region 1
+    "mesh_2": (28, 1),  # Mesh refinement region 2
+    "mesh_3": (29, 1),  # Mesh refinement region 3
+    "mesh_4": (31, 1),  # Mesh refinement region 4
+    "mesh_5": (32, 1),  # Mesh refinement region 5
 }
 
 

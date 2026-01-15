@@ -30,7 +30,7 @@ if json_file.exists():
         print(f"    {layer_name}: {size} µm")
 
     print(f"\n  Layers with 'layer' key (will be exported to GDS/ANSYS):")
-    airbridge_found = []
+    mesh_layers_found = []
     for name, info in data['layers'].items():
         if 'layer' in info:
             print(f"    {name}:")
@@ -38,10 +38,10 @@ if json_file.exists():
             print(f"      z: {info.get('z')}")
             print(f"      thickness: {info.get('thickness')}")
             print(f"      layer: {info.get('layer')}")
-            if 'airbridge' in name:
-                airbridge_found.append(name)
+            if 'mesh_' in name:
+                mesh_layers_found.append(name)
 
-    print(f"\n  Airbridge layers found: {airbridge_found if airbridge_found else 'NONE'}")
+    print(f"\n  Mesh control layers found: {mesh_layers_found if mesh_layers_found else 'NONE'}")
 else:
     print(f"\nERROR: JSON file not found: {json_file}")
 
@@ -56,7 +56,7 @@ if oas_file.exists():
     cell = layout.top_cells()[0]
     print(f"\n  Checking cell '{cell.name}' for layers:")
 
-    airbridge_layers = []
+    mesh_layers = []
     all_layers_list = []
     for layer_info in layout.layer_infos():
         layer_idx = layout.layer(layer_info)
@@ -64,12 +64,12 @@ if oas_file.exists():
         all_layers_list.append(layer_info.name)
         if not shapes.is_empty():
             print(f"    {layer_info.name} ({layer_info.layer}/{layer_info.datatype}): {shapes.size()} shapes")
-            if 'airbridge' in layer_info.name.lower():
-                airbridge_layers.append(layer_info.name)
-                print(f"      *** AIRBRIDGE LAYER FOUND ***")
+            if 'mesh_' in layer_info.name.lower():
+                mesh_layers.append(layer_info.name)
+                print(f"      *** MESH CONTROL LAYER FOUND ***")
 
     print(f"\n  All layer names in layout: {all_layers_list}")
-    print(f"\n  Airbridge layers in OAS: {airbridge_layers if airbridge_layers else 'NONE'}")
+    print(f"\n  Mesh control layers in OAS: {mesh_layers if mesh_layers else 'NONE'}")
 else:
     print(f"\nERROR: OAS file not found: {oas_file}")
 

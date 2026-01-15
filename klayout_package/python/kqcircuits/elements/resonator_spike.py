@@ -114,13 +114,15 @@ class ResonatorSpike(Element):
             ground_gap_region + feedline_region - inductor_region - end_box_region + t_cut_region - spikes_combined
         )
 
+        # Add mesh control regions for fine-grained ANSYS mesh refinement
+        # mesh_1: Fine mesh around spike regions
+        # mesh_2: Coarse mesh for inductor region
         spikes_meshing_region = self._make_meshing_region()
-        self.cell.shapes(self.get_layer("airbridge_pads")).insert(
+        self.cell.shapes(self.get_layer("mesh_1")).insert(
             spikes_meshing_region
         )
-        self.cell.shapes(self.get_layer("airbridge_flyover")).insert(
+        self.cell.shapes(self.get_layer("mesh_2")).insert(
             inductor_region
-
         )
         
 
