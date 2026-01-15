@@ -37,6 +37,8 @@ class ResonatorSpike(Element):
     l_height = Param(pdt.TypeDouble, "Inductor height", 500, unit="μm")
     l_radius = Param(pdt.TypeDouble, "Inductor turn radius", 25, unit="μm")
     l_ground_gap = Param(pdt.TypeDouble, "Inductor ground gap", 120, unit="μm")
+    l_grounding_distance = Param(pdt.TypeDouble, "Inductor grounding distance from side of capacitor", 20, unit="μm")
+    l_junction_width = Param(pdt.TypeDouble, "Width of inductor above end box used for coupling junction", 15, unit="μm")
 
     end_box_width = Param(pdt.TypeDouble, "End box width", 20, unit="μm")
     end_box_buffer = Param(pdt.TypeDouble, "End box buffer", 2.5, unit="μm")
@@ -65,6 +67,7 @@ class ResonatorSpike(Element):
 
         self.angle_evap_offset = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_1)) - np.sin(np.radians(self.shadow_angle_2)))
         self.end_box_height = self.spike_base_width*self.spike_number + 2 * self.end_box_buffer
+        self.spike_region_width = self.spike_height * 2 + self.spike_gap + self.angle_evap_offset
 
         self.ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2)
         self.ground_gap_top = -(self.b + self.a/2 + self.feedline_spacing)
@@ -75,8 +78,7 @@ class ResonatorSpike(Element):
         self.end_box_bottom = self.end_box_spacing + self.ground_gap_bottom
         self.end_box_left = self.l_coupling_length/2 - self.end_box_width
         self.end_box_right = self.l_coupling_length/2 + self.end_box_width
-
-        self.spike_region_width = self.spike_height * 2 + self.spike_gap
+        self.end_box_far_left = self.end_box_left - self.spike_region_width - self.end_box_width
 
         pts = [
             pya.DPoint(self.ground_gap_left, self.ground_gap_top),
@@ -131,13 +133,17 @@ class ResonatorSpike(Element):
         self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
 
     def _make_inductor(self):
-        ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2 + self.angle_evap_offset) - 2*self.a
+        ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2 + self.angle_evap_offset)
         ground_gap_top = -(self.b + self.a/2  +self.feedline_spacing)
         end_box_top = self.end_box_spacing + self.ground_gap_bottom + self.end_box_height
     
         pts_ind = [
-                pya.DPoint(-self.l_coupling_length/2 - self.l_width/2, ground_gap_bottom),
-                pya.DPoint(-self.l_coupling_length/2 + self.l_width/2, ground_gap_bottom),
+                pya.DPoint(-self.l_coupling_length/2 - self.l_width/2, self.end_box_top + self.l_junction_width + self.l_radius),
+                pya.DPoint(self.end_box_far_left - self.l_grounding_distance - self.l_width/2, self.end_box_top + self.l_junction_width + self.l_radius),
+                pya.DPoint(self.end_box_far_left - self.l_grounding_distance - self.l_width/2, ground_gap_bottom - 2* self.a),
+                pya.DPoint(self.end_box_far_left - self.l_grounding_distance + self.l_width/2, ground_gap_bottom - 2* self.a),
+                pya.DPoint(self.end_box_far_left - self.l_grounding_distance + self.l_width/2, self.end_box_top + self.l_junction_width + self.l_width + self.l_radius),
+                pya.DPoint(-self.l_coupling_length/2 + self.l_width/2, self.end_box_top + self.l_junction_width + self.l_width + self.l_radius),
                 pya.DPoint(-self.l_coupling_length/2 + self.l_width/2, ground_gap_top - self.l_coupling_distance - self.l_width),
                 pya.DPoint(self.l_coupling_length/2 - self.l_width/2, ground_gap_top - self.l_coupling_distance - self.l_width),
                 pya.DPoint(self.l_coupling_length/2 - self.l_width/2, end_box_top - 2 * self.a),
@@ -261,13 +267,13 @@ class ResonatorSpike(Element):
 
         spikes_shape = self._make_spikes_shape()
 
-        shift_1_y = -1 * self.resist_thickness * np.sin(np.radians(self.shadow_angle_1))
-        shift_2_y = -1 * self.resist_thickness * np.sin(np.radians(self.shadow_angle_2))
-        shift_1_y_dbu = shift_1_y / self.layout.dbu
-        shift_2_y_dbu = shift_2_y / self.layout.dbu
+        shift_1_x = -1 * self.resist_thickness * np.sin(np.radians(self.shadow_angle_1))
+        shift_2_x = -1 * self.resist_thickness * np.sin(np.radians(self.shadow_angle_2))
+        shift_1_x_dbu = shift_1_x / self.layout.dbu
+        shift_2_x_dbu = shift_2_x / self.layout.dbu
 
-        trans_1 = pya.DTrans(0, False, 0, int(shift_1_y_dbu))
-        trans_2 = pya.DTrans(0, False, 0, int(-shift_2_y_dbu))
+        trans_1 = pya.DTrans(0, False, int(shift_1_x_dbu), 0)
+        trans_2 = pya.DTrans(0, False, int(-shift_2_x_dbu), 0)
 
         shadow_1 = spikes_shape.transformed(trans_1)
         shadow_2 = spikes_shape.transformed(trans_2)
