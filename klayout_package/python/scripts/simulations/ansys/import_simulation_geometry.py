@@ -467,12 +467,20 @@ if ansys_tool in hfss_tools:
 
 
 elif ansys_tool == "q3d":
+    # Check if this is an ACRL simulation (needs conductor as SignalNet, not ground)
+    solve_acrl = data.get("analysis_setup", {}).get("solve_acrl", False)
+
     excitations = {d["excitation"] for d in metal_layers.values()}
     for excitation in excitations:
         objs = [o for n, d in metal_layers.items() if d["excitation"] == excitation for o in objects[n]]
         if not objs:
             continue
-        if excitation == 0:
+        # For ACRL simulations with ports, treat excitation==0 as Net1 (SignalNet) instead of ground
+        # This allows ACRL source/sink assignment on the main conductor
+        if excitation == 0 and solve_acrl and len(data.get("ports", [])) > 0:
+            oBoundarySetup.AssignSignalNet(["NAME:Net1", "Objects:=", objs])
+            oDesktop.AddMessage("", "", 0, "ACRL mode: Assigning excitation=0 objects as SignalNet (Net1) instead of ground")
+        elif excitation == 0:
             for i, obj in enumerate(objs):
                 oBoundarySetup.AssignGroundNet(["NAME:Ground{}".format(i + 1), "Objects:=", [obj]])
         elif excitation > len(data["ports"]) and data.get("use_floating_islands", False):
@@ -516,8 +524,10 @@ if data.get("integrate_magnetic_flux", False) and ansys_tool in hfss_tools:
         add_magnetic_flux_integral_expression(oModule, "flux_{}".format(lname), objects[lname])
 
 # Manual mesh refinement
+mesh_layers_all = []  # Track all mesh layer names for cleanup
 for mesh_name, mesh_length in mesh_size.items():
     mesh_layers = [n for n in layers if match_layer(n, mesh_name)]
+    mesh_layers_all.extend(mesh_layers)
     mesh_objects = [o for l in mesh_layers if l in objects for o in objects[l]]
     if mesh_objects:
         oMeshSetup = oDesign.GetModule("MeshSetup")
@@ -538,6 +548,18 @@ for mesh_name, mesh_length in mesh_size.items():
                 str(mesh_length) + units,
             ]
         )
+
+# Delete mesh layer objects now that mesh refinement is assigned
+# This prevents mesh objects from interfering with net assignment (causing disjoint net errors)
+if mesh_layers_all:
+    mesh_objects_to_delete = [o for l in set(mesh_layers_all) if l in objects for o in objects[l]]
+    if mesh_objects_to_delete:
+        oEditor.Delete(["NAME:Selections", "Selections:=", ",".join(mesh_objects_to_delete)])
+        oDesktop.AddMessage("", "", 0, "Deleted {} mesh layer objects after mesh assignment".format(len(mesh_objects_to_delete)))
+        # Remove mesh layers from objects dict so they won't be referenced later
+        for l in set(mesh_layers_all):
+            if l in objects:
+                del objects[l]
 
 if not ansys_project_template:
     # Insert analysis setup
@@ -741,37 +763,224 @@ if not ansys_project_template:
             ],
         )
     elif ansys_tool == "q3d":
-        oAnalysisSetup.InsertSetup(
-            "Matrix",
-            [
-                "NAME:Setup1",
-                "AdaptiveFreq:=",
-                str(setup["frequency"]) + setup["frequency_units"],
-                "SaveFields:=",
-                False,
-                "Enabled:=",
+        # Check if ACRL (inductance/resistance) extraction is enabled
+        solve_acrl = setup.get("solve_acrl", False)
+
+        # Build setup parameters
+        setup_params = [
+            "NAME:Setup1",
+            "AdaptiveFreq:=",
+            str(setup["frequency"]) + setup["frequency_units"],
+            "SaveFields:=",
+            False,
+            "Enabled:=",
+            True,
+        ]
+
+        # Choose between Cap-only or ACRL-only mode
+        if solve_acrl:
+            # ACRL mode: Only AC block (skip Cap to avoid conflicts)
+            setup_params.append([
+                "NAME:AC",
+                "MaxPass:=",
+                setup["maximum_passes"],
+                "MinPass:=",
+                setup["minimum_passes"],
+                "MinConvPass:=",
+                setup["minimum_converged_passes"],
+                "PerError:=",
+                setup["percent_error"],
+                "PerRefine:=",
+                setup["percent_refinement"],
+                "ACRLSolverType:=",
+                "ACA",
+            ])
+        else:
+            # Capacitance-only mode: Only Cap block
+            setup_params.append([
+                "NAME:Cap",
+                "MaxPass:=",
+                setup["maximum_passes"],
+                "MinPass:=",
+                setup["minimum_passes"],
+                "MinConvPass:=",
+                setup["minimum_converged_passes"],
+                "PerError:=",
+                setup["percent_error"],
+                "PerRefine:=",
+                setup["percent_refinement"],
+                "AutoIncreaseSolutionOrder:=",
                 True,
-                [
-                    "NAME:Cap",
-                    "MaxPass:=",
-                    setup["maximum_passes"],
-                    "MinPass:=",
-                    setup["minimum_passes"],
-                    "MinConvPass:=",
-                    setup["minimum_converged_passes"],
-                    "PerError:=",
-                    setup["percent_error"],
-                    "PerRefine:=",
-                    setup["percent_refinement"],
-                    "AutoIncreaseSolutionOrder:=",
-                    True,
-                    "SolutionOrder:=",
-                    "High",
-                    "Solver Type:=",
-                    "Iterative",
-                ],
-            ],
-        )
+                "SolutionOrder:=",
+                "High",
+                "Solver Type:=",
+                "Iterative",
+            ])
+
+        oAnalysisSetup.InsertSetup("Matrix", setup_params)
+
+        # Configure source/sink for ACRL if enabled
+        if solve_acrl:
+            # Get ACRL source/sink configuration
+            acrl_sources = setup.get("acrl_sources", {})
+
+            # If no explicit acrl_sources, try to derive from extra_json_data or ports
+            if not acrl_sources:
+                # First try extra_json_data (preferred method - doesn't create port excitations)
+                # extra_json_data is in parameters section
+                params = data.get("parameters", {})
+                extra_data = params.get("extra_json_data", {})
+                acrl_locs = extra_data.get("acrl_port_locations", {})
+                if "source" in acrl_locs and "sink" in acrl_locs:
+                    acrl_sources = {
+                        "Net1": {
+                            "source_location": acrl_locs["source"],
+                            "sink_location": acrl_locs["sink"],
+                        }
+                    }
+                    oDesktop.AddMessage("", "", 0, "ACRL: Using port locations from design extra_json_data")
+                # Fallback: try ports (legacy method)
+                elif "ports" in data and len(data["ports"]) >= 2:
+                    port1 = data["ports"][0]
+                    port2 = data["ports"][1]
+                    if "signal_location" in port1 and "signal_location" in port2:
+                        acrl_sources = {
+                            "Net1": {
+                                "source_location": port1["signal_location"],
+                                "sink_location": port2["signal_location"],
+                            }
+                        }
+                        oDesktop.AddMessage("", "", 0, "ACRL: Using port locations from design (port 1 = source, port 2 = sink)")
+
+            if acrl_sources:
+                # User specified source/sink locations manually
+                try:
+                    # Get all excitations to find signal nets
+                    excitations = oBoundarySetup.GetExcitations()
+                    nets = excitations[::2]
+                    net_types = excitations[1::2]
+
+                    # Helper function to find edge nearest to a location on a specific net
+                    def find_nearest_edge(target_location, net_name, tolerance=1e-3):
+                        """Find edge ID closest to target location [x, y, z] on objects belonging to net_name"""
+                        best_edge = None
+                        best_distance = float('inf')
+
+                        # Get objects assigned to this net
+                        try:
+                            # Get the signal net properties to find which objects belong to it
+                            all_objs = oEditor.GetObjectsInGroup("Sheets")
+                            # Filter to only metal sheets (excludes substrate, vacuum, etc.)
+                            obj_names = [obj for obj in all_objs if obj in metal_sheets]
+                        except:
+                            # Fallback: just use metal_sheets
+                            obj_names = metal_sheets
+
+                        for obj_name in obj_names:
+                            try:
+                                edges = oEditor.GetEdgeIDsFromObject(obj_name)
+                                if not edges:
+                                    continue
+
+                                for edge_id in edges:
+                                    # Get edge center position
+                                    try:
+                                        # Get vertices of the edge
+                                        vertices = oEditor.GetVertexIDsFromEdge(edge_id)
+                                        if len(vertices) >= 2:
+                                            # Get positions of first two vertices (convert strings to floats)
+                                            pos1_raw = oEditor.GetVertexPosition(vertices[0])
+                                            pos2_raw = oEditor.GetVertexPosition(vertices[1])
+                                            pos1 = [float(x) for x in pos1_raw]
+                                            pos2 = [float(x) for x in pos2_raw]
+
+                                            # Calculate edge center
+                                            edge_center = [
+                                                (pos1[0] + pos2[0]) / 2.0,
+                                                (pos1[1] + pos2[1]) / 2.0,
+                                                (pos1[2] + pos2[2]) / 2.0,
+                                            ]
+
+                                            # Calculate distance to target
+                                            # Ensure target_location has 3 components (handle 2D input)
+                                            if len(target_location) == 2:
+                                                target_3d = [target_location[0], target_location[1], 0.0]
+                                            else:
+                                                target_3d = target_location
+
+                                            dx = edge_center[0] - target_3d[0]
+                                            dy = edge_center[1] - target_3d[1]
+                                            dz = edge_center[2] - target_3d[2]
+                                            distance = (dx**2 + dy**2 + dz**2)**0.5
+
+                                            if distance < best_distance:
+                                                best_distance = distance
+                                                best_edge = edge_id
+                                    except:
+                                        pass
+                            except:
+                                pass
+
+                        return best_edge, best_distance
+
+                    # Assign source/sink for each net with specified locations
+                    for net_name, net_type in zip(nets, net_types):
+                        if net_type == "SignalNet" and net_name in acrl_sources:
+                            net_config = acrl_sources[net_name]
+                            source_loc = net_config.get("source_location")
+                            sink_loc = net_config.get("sink_location")
+
+                            if source_loc and sink_loc:
+                                try:
+                                    # Find edges nearest to specified locations on metal conductor objects only
+                                    source_edge_id, source_dist = find_nearest_edge(source_loc, net_name)
+                                    sink_edge_id, sink_dist = find_nearest_edge(sink_loc, net_name)
+
+                                    if source_edge_id and sink_edge_id:
+                                        # Assign source
+                                        oBoundarySetup.AssignSource(
+                                            [
+                                                "NAME:Source_" + net_name,
+                                                "Edges:=", [int(source_edge_id)],
+                                                "TerminalType:=", "ConstantVoltage",
+                                                "Net:=", net_name,
+                                            ]
+                                        )
+
+                                        # Assign sink
+                                        oBoundarySetup.AssignSink(
+                                            [
+                                                "NAME:Sink_" + net_name,
+                                                "Edges:=", [int(sink_edge_id)],
+                                                "TerminalType:=", "ConstantVoltage",
+                                                "Net:=", net_name,
+                                            ]
+                                        )
+
+                                        oDesktop.AddMessage(
+                                            "",
+                                            "",
+                                            0,
+                                            "ACRL source/sink assigned to {}: source edge {}, sink edge {}".format(
+                                                net_name, source_edge_id, sink_edge_id
+                                            ),
+                                        )
+                                    else:
+                                        oDesktop.AddMessage("", "", 2, "Warning: Could not find edges for {}: source_edge={}, sink_edge={}".format(
+                                            net_name, source_edge_id, sink_edge_id))
+                                except Exception as e:
+                                    oDesktop.AddMessage("", "", 2, "Warning: Failed to assign source/sink for {}: {}".format(net_name, str(e)))
+                except Exception as e:
+                    oDesktop.AddMessage("", "", 2, "Warning: ACRL source/sink assignment failed: " + str(e))
+
+        # Log ACRL status
+        if solve_acrl:
+            oDesktop.AddMessage(
+                "",
+                "",
+                1,
+                "Q3D ACRL enabled: will extract inductance (L) and resistance (R) matrices in addition to capacitance (C)",
+            )
     elif ansys_tool == "eigenmode":
         # Create EM setup
         setup_list = [

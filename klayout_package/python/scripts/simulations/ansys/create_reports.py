@@ -178,6 +178,60 @@ elif design_type == "Q3D Extractor":
             unique_output_c,
         )
 
+    # Create inductance reports if ACRL output variables exist
+    unique_elements_l = ["L_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
+    unique_output_l = [e for e in unique_elements_l if e in oOutputVariable.GetOutputVariables()]
+    if unique_output_l:
+        create_x_vs_y_plot(
+            oReportSetup,
+            "Inductance vs Frequency",
+            "Matrix",
+            setup + " : LastAdaptive",
+            ["Context:=", "Original"],
+            ["Freq:=", ["All"]],
+            "Freq",
+            "L",
+            unique_output_l,
+        )
+        create_x_vs_y_plot(
+            oReportSetup,
+            "Inductance Convergence",
+            "Matrix",
+            setup + " : AdaptivePass",
+            ["Context:=", "Original"],
+            ["Pass:=", ["All"], "Freq:=", ["All"]],
+            "Pass",
+            "L",
+            unique_output_l,
+        )
+
+    # Create resistance reports if ACRL output variables exist
+    unique_elements_r = ["R_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
+    unique_output_r = [e for e in unique_elements_r if e in oOutputVariable.GetOutputVariables()]
+    if unique_output_r:
+        create_x_vs_y_plot(
+            oReportSetup,
+            "Resistance vs Frequency",
+            "Matrix",
+            setup + " : LastAdaptive",
+            ["Context:=", "Original"],
+            ["Freq:=", ["All"]],
+            "Freq",
+            "R",
+            unique_output_r,
+        )
+        create_x_vs_y_plot(
+            oReportSetup,
+            "Resistance Convergence",
+            "Matrix",
+            setup + " : AdaptivePass",
+            ["Context:=", "Original"],
+            ["Pass:=", ["All"], "Freq:=", ["All"]],
+            "Pass",
+            "R",
+            unique_output_r,
+        )
+
 elif design_type == "2D Extractor":
     setup = get_enabled_setup(oDesign, tab="General")
     each_pass = setup + " : AdaptivePass"

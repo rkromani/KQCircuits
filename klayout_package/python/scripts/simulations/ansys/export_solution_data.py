@@ -204,6 +204,55 @@ elif design_type == "Q3D Extractor":
         ),
     }
 
+    # Check if ACRL (inductance/resistance) output variables exist
+    output_variables = oOutputVariable.GetOutputVariables()
+    has_inductance = any("L_" in v for v in output_variables)
+    has_resistance = any("R_" in v for v in output_variables)
+
+    # Export inductance matrix if ACRL was enabled
+    if has_inductance:
+        try:
+            json_content["LMatrix"] = [
+                [
+                    get_solution_data(oReportSetup, "Matrix", solution, context, [], "L_{}_{}".format(net_i, net_j))[0]
+                    for net_j in signal_nets
+                ]
+                for net_i in signal_nets
+            ]
+            json_content["Ldata"] = get_solution_data(
+                oReportSetup,
+                "Matrix",
+                solution,
+                context,
+                [],
+                ["L_{}_{}".format(net_i, net_j) for net_j in signal_nets for net_i in signal_nets],
+            )
+            oDesktop.AddMessage("", "", 0, "Inductance matrix exported to JSON")
+        except Exception as e:
+            oDesktop.AddMessage("", "", 2, "Warning: Could not export inductance matrix: {}".format(e))
+
+    # Export resistance matrix if ACRL was enabled
+    if has_resistance:
+        try:
+            json_content["RMatrix"] = [
+                [
+                    get_solution_data(oReportSetup, "Matrix", solution, context, [], "R_{}_{}".format(net_i, net_j))[0]
+                    for net_j in signal_nets
+                ]
+                for net_i in signal_nets
+            ]
+            json_content["Rdata"] = get_solution_data(
+                oReportSetup,
+                "Matrix",
+                solution,
+                context,
+                [],
+                ["R_{}_{}".format(net_i, net_j) for net_j in signal_nets for net_i in signal_nets],
+            )
+            oDesktop.AddMessage("", "", 0, "Resistance matrix exported to JSON")
+        except Exception as e:
+            oDesktop.AddMessage("", "", 2, "Warning: Could not export resistance matrix: {}".format(e))
+
     # Save capacitance matrix into readable format
     save_capacitance_matrix(matrix_filename, json_content["CMatrix"])
 

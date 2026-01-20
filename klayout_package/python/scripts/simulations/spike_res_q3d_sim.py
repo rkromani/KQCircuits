@@ -74,7 +74,7 @@ class ResonatorSpikeQ3dSim(BaseSimClass):
         # end_box_bottom = end_box_spacing + ground_gap_bottom
         ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing +
                               self.b + self.a/2)
-        end_box_height = self.spike_base_width * self.spike_number + 2 * self.end_box_buffer
+        end_box_height = self.end_box_height
         end_box_bottom = self.end_box_spacing + ground_gap_bottom
         center_y = end_box_bottom + end_box_height / 2
 
@@ -97,12 +97,13 @@ sim_parameters = {
     "box": pya.DBox(pya.DPoint(0, -700), pya.DPoint(1000, 3000)),
     "shadow_angle_1": 0,
     "shadow_angle_2": 0,
-    "spike_number": 50,
-    "spike_height": 0.5,
-    "spike_base_width": 0.25,
-    "end_box_buffer": 100,
+    "spike_number": 1,
+    #"spike_height": 1,
+    "spike_base_width": 2,
+    "t_cut_number": 0,
+    "end_box_height": 1000, 
     "l_height": 1600,
-    "spike_gap": 0.1,
+    "spike_gap": 0.5,
     "face_stack": ["1t1"],
 
     # CRITICAL: Disable inductor to isolate spike system from ground
@@ -142,7 +143,10 @@ simulations += cross_sweep_simulation(
     SimClass,
     sim_parameters,
     {
-        "spike_number": [50, 100, 200, 300, 400, 500],
+        #"spike_number": [50, 100, 200, 300, 400, 500],
+        #"spike_gap": [0.025, 0.05, 0.1, 0.15, 0.2,],
+        "spike_height": [2.0, 4.0, 10.0, 15.0, 20.0],
+        #"spike_base_width": [0.125, 0.25, 0.5, 1.0, 2.0],
     },
 )
 

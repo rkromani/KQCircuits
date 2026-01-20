@@ -155,12 +155,23 @@ class AnsysQ3dSolution(AnsysSolution):
         frequency: Nominal solution frequency (has no effect on capacitance matrix at the moment).
         percent_error: Stopping criterion in Q3D simulation.
         use_floating_islands: Use floating Net for islands with excitation larger than number of ports.
+        solve_acrl: Enable AC Resistance and Inductance extraction (default: False). When enabled, Q3D will
+                    compute inductance (L) and resistance (R) matrices in addition to capacitance (C).
+        acrl_automatic_edges: Automatically define source/sink edges from port geometry (default: True).
+                              Only used when solve_acrl is True. Relies on ANSYS automatic edge detection.
+        acrl_sources: Dictionary specifying source/sink locations for ACRL. Format:
+                      {"Net1": {"source_location": [x, y, z], "sink_location": [x, y, z]}}
+                      Coordinates are in design units (typically µm). The import script will find the
+                      nearest edge to each location and assign it as source/sink.
     """
 
     ansys_tool: ClassVar[str] = "q3d"
     frequency: float = 5
     percent_error: float = 1
     use_floating_islands: bool = False
+    solve_acrl: bool = False
+    acrl_automatic_edges: bool = True
+    acrl_sources: dict | None = None
 
     def get_solution_data(self):
         """Return the solution data in dictionary form."""
@@ -171,6 +182,9 @@ class AnsysQ3dSolution(AnsysSolution):
                 **data["analysis_setup"],
                 "frequency": self.frequency,
                 "percent_error": self.percent_error,
+                "solve_acrl": self.solve_acrl,
+                "acrl_automatic_edges": self.acrl_automatic_edges,
+                "acrl_sources": self.acrl_sources if self.acrl_sources else {},
             },
             "use_floating_islands": self.use_floating_islands,
         }

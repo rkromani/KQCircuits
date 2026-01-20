@@ -42,15 +42,15 @@ class ResonatorSpike(Element):
     l_junction_width = Param(pdt.TypeDouble, "Width of inductor above end box used for coupling junction", 15, unit="μm")
 
     end_box_width = Param(pdt.TypeDouble, "End box width", 20, unit="μm")
-    end_box_buffer = Param(pdt.TypeDouble, "End box buffer", 2.5, unit="μm")
+    end_box_height = Param(pdt.TypeDouble, "End box height", 50, unit="μm")
     end_box_spacing = Param(pdt.TypeDouble, "End box spacing from bottom of ground gap box", 20, unit="μm")
 
     t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 3, unit="μm")
     t_cut_distance_from_edge = Param(pdt.TypeDouble, "Distance of T-cut from edge of optical layer", 3, unit="μm")
     t_cut_t_width = Param(pdt.TypeDouble, "Width of T-cut T", 6, unit="μm")
     t_cut_t_height = Param(pdt.TypeDouble, "Height of T-cut T", 3, unit="μm")
-    t_cut_number = Param(pdt.TypeInt, "Number of T-cuts", 2)
     t_cut_radius = Param(pdt.TypeDouble, "Radius of T-cut corners", 2, unit="μm")
+    t_cut_number = Param(pdt.TypeInt, "Number of T-cuts", 1)
     
     spike_height = Param(pdt.TypeDouble, "Spike height", 1.5, unit="μm")
     spike_gap = Param(pdt.TypeDouble, "Spike gap", 0.1, unit="μm")
@@ -60,6 +60,7 @@ class ResonatorSpike(Element):
 
     junction_bool = Param(pdt.TypeBoolean, "Whether to add junction", True)
     include_inductor = Param(pdt.TypeBoolean, "Include inductor (disable for Q3D capacitance measurements)", True)
+    enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers (disable for Q3D ACRL due to ANSYS bug)", True)
     total_junction_height = Param(pdt.TypeDouble, "Total junction height", 20, unit="μm", readonly=True)
 
     
@@ -72,7 +73,9 @@ class ResonatorSpike(Element):
     def build(self):
 
         self.angle_evap_offset = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_1)) - np.sin(np.radians(self.shadow_angle_2)))
-        self.end_box_height = self.spike_base_width*self.spike_number + 2 * self.end_box_buffer
+        #self.end_box_height = self.spike_base_width*self.spike_number + 2 * self.end_box_buffer
+        #distance between end of end box and spikes
+        self.end_box_buffer = (self.end_box_height - self.spike_base_width*self.spike_number)/2
         self.spike_region_width = self.spike_height * 2 + self.spike_gap + self.angle_evap_offset
 
         self.ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2)
@@ -107,7 +110,7 @@ class ResonatorSpike(Element):
         if self.junction_bool:
             self._make_junction()
         
-        if self.spike_number != 0:
+        if (self.spike_number != 0) and (self.t_cut_number != 0):
             t_cut_region = self._make_t_cuts()
         else:
             t_cut_region = pya.Region()
@@ -131,22 +134,65 @@ class ResonatorSpike(Element):
         )
 
         # Add mesh control regions for fine-grained ANSYS mesh refinement
-        # mesh_1: Fine mesh around spike regions
-        spikes_meshing_region = self._make_meshing_region()
-        self.cell.shapes(self.get_layer("mesh_1")).insert(
-            spikes_meshing_region
-        )
-
-        # mesh_2: Coarse mesh for inductor region (only when inductor is included)
-        if self.include_inductor:
-            self.cell.shapes(self.get_layer("mesh_2")).insert(
-                inductor_region
+        # Disabled for Q3D ACRL simulations due to ANSYS bug with mesh layer deletion
+        if self.enable_mesh_layers:
+            # mesh_1: Fine mesh around spike regions
+            spikes_meshing_region = self._make_meshing_region()
+            self.cell.shapes(self.get_layer("mesh_1")).insert(
+                spikes_meshing_region
             )
+
+            # mesh_2: Coarse mesh for inductor region (only when inductor is included)
+            if self.include_inductor:
+                self.cell.shapes(self.get_layer("mesh_2")).insert(
+                    inductor_region
+                )
         
 
         # add reference point
         self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
         self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
+
+        # Add ACRL source/sink port markers for Q3D inductance measurements through the inductor
+        # These are visual markers that simulation scripts can use to define ACRL edge locations
+        # Source: bottom of end box (capacitor side)
+        # Sink: bottom of inductor (ground side)
+        if self.include_inductor:
+            source_x = (self.end_box_left + self.end_box_right) / 2  # Center of end box
+            source_y = self.end_box_bottom
+            self.add_port("Net1_source", pya.DPoint(source_x, source_y), pya.DVector(0, -1))
+
+            sink_x = self.end_box_far_left - 1.5 * self.l_grounding_distance  # Where inductor grounds
+            sink_y = self.ground_gap_bottom  # Bottom of inductor at ground
+            self.add_port("Net1_sink", pya.DPoint(sink_x, sink_y), pya.DVector(0, -1))
+
+    @classmethod
+    def get_sim_ports(cls, simulation):
+        """Define ACRL source/sink ports for Q3D inductance simulations.
+
+        For ACRL simulations (solve_acrl=True), return empty list since we don't want
+        to create port-based excitations - port locations are only used as markers.
+
+        Returns list of RefpointToInternalPort objects that will be converted to
+        InternalPort objects during simulation export. These port coordinates will
+        be used by ANSYS import script to find nearest edges for ACRL source/sink assignment.
+        """
+        from kqcircuits.util.refpoints import RefpointToInternalPort
+
+        # Only add ACRL ports when inductor is included
+        if not simulation.include_inductor:
+            return []
+
+        # For ACRL simulations, don't create port excitations
+        # Port locations are exported in extra_json_data instead
+        if hasattr(simulation, 'solve_acrl') and simulation.solve_acrl:
+            return []
+
+        # Refpoint names have "port_" prefix added by add_port()
+        return [
+            RefpointToInternalPort("port_Net1_source"),
+            RefpointToInternalPort("port_Net1_sink"),
+        ]
 
     def _make_inductor(self):
         ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2 + self.angle_evap_offset)
