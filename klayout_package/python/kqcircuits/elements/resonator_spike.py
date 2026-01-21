@@ -77,6 +77,7 @@ class ResonatorSpike(Element):
         #distance between end of end box and spikes
         self.end_box_buffer = (self.end_box_height - self.spike_base_width*self.spike_number)/2
         self.spike_region_width = self.spike_height * 2 + self.spike_gap + self.angle_evap_offset
+        self.spike_region_length = self.spike_number * self.spike_base_width
 
         self.ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2)
         self.ground_gap_top = -(self.b + self.a/2 + self.feedline_spacing)
@@ -137,7 +138,7 @@ class ResonatorSpike(Element):
         # Disabled for Q3D ACRL simulations due to ANSYS bug with mesh layer deletion
         if self.enable_mesh_layers:
             # mesh_1: Fine mesh around spike regions
-            spikes_meshing_region = self._make_meshing_region()
+            spikes_meshing_region = self._make_spike_meshing_region()
             self.cell.shapes(self.get_layer("mesh_1")).insert(
                 spikes_meshing_region
             )
@@ -147,6 +148,12 @@ class ResonatorSpike(Element):
                 self.cell.shapes(self.get_layer("mesh_2")).insert(
                     inductor_region
                 )
+
+            # mesh_3: Fine mesh in capacitor
+            cap_meshing_region = self._make_cap_meshing_region()
+            self.cell.shapes(self.get_layer("mesh_3")).insert(
+                cap_meshing_region
+            )
         
 
         # add reference point
@@ -418,24 +425,65 @@ class ResonatorSpike(Element):
             shadow_angle=self.shadow_angle_1, resist_thickness=self.resist_thickness
         )
 
-    def _make_meshing_region(self):
-        buffer = 0.25*self.spike_region_width
+    def _make_spike_meshing_region(self):
+        buffer = 0.1*self.spike_region_width
+        end_box_middle = (self.end_box_top + self.end_box_bottom)/2
         
         pts_l = [
-                pya.DPoint(self.end_box_left + buffer, self.end_box_bottom),
-                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, self.end_box_bottom),
-                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, self.end_box_top),
-                pya.DPoint(self.end_box_left + buffer, self.end_box_top),
+                pya.DPoint(self.end_box_left + buffer, end_box_middle - self.spike_region_length/2),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, end_box_middle - self.spike_region_length/2),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, end_box_middle + self.spike_region_length/2),
+                pya.DPoint(self.end_box_left + buffer, end_box_middle + self.spike_region_length/2),
                 ]
         region_l = pya.Region(pya.DPolygon(pts_l).to_itype(self.layout.dbu))
 
         pts_r = [
-                pya.DPoint(self.end_box_right - buffer, self.end_box_bottom),
-                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, self.end_box_bottom),
-                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, self.end_box_top),
-                pya.DPoint(self.end_box_right - buffer, self.end_box_top),
+                pya.DPoint(self.end_box_right - buffer, end_box_middle - self.spike_region_length/2),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, end_box_middle - self.spike_region_length/2),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, end_box_middle + self.spike_region_length/2),
+                pya.DPoint(self.end_box_right - buffer, end_box_middle + self.spike_region_length/2),
                 ]
         region_r = pya.Region(pya.DPolygon(pts_r).to_itype(self.layout.dbu))
         
 
         return region_r + region_l
+    
+    
+
+    def _make_cap_meshing_region(self):
+        buffer = 0.1*self.spike_region_width
+        end_box_middle = (self.end_box_top + self.end_box_bottom)/2
+        
+        pts_lt = [
+                pya.DPoint(self.end_box_left + buffer, self.end_box_top),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, self.end_box_top),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, end_box_middle + self.spike_region_length/2),
+                pya.DPoint(self.end_box_left + buffer, end_box_middle + self.spike_region_length/2),
+                ]
+        region_lt = pya.Region(pya.DPolygon(pts_lt).to_itype(self.layout.dbu))
+        
+        pts_lb = [
+                pya.DPoint(self.end_box_left + buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_left - self.spike_region_width - buffer, end_box_middle - self.spike_region_length/2),
+                pya.DPoint(self.end_box_left + buffer, end_box_middle - self.spike_region_length/2),
+                ]
+        region_lb = pya.Region(pya.DPolygon(pts_lb).to_itype(self.layout.dbu))
+
+        pts_rt = [
+                pya.DPoint(self.end_box_right - buffer, self.end_box_top),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, self.end_box_top),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, end_box_middle + self.spike_region_length/2),
+                pya.DPoint(self.end_box_right - buffer, end_box_middle + self.spike_region_length/2),
+                ]
+        region_rt = pya.Region(pya.DPolygon(pts_rt).to_itype(self.layout.dbu))
+
+        pts_rb = [
+                pya.DPoint(self.end_box_right - buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, self.end_box_bottom),
+                pya.DPoint(self.end_box_right + self.spike_region_width + buffer, end_box_middle - self.spike_region_length/2),
+                pya.DPoint(self.end_box_right - buffer, end_box_middle - self.spike_region_length/2),
+                ]
+        region_rb = pya.Region(pya.DPolygon(pts_rb).to_itype(self.layout.dbu))
+
+        return region_rt + region_rb + region_lt + region_lb

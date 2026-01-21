@@ -151,21 +151,16 @@ elif design_type == "Q3D Extractor":
     net_types = oBoundarySetup.GetExcitations()[1::2]
     signal_nets = [net for net, net_type in zip(nets, net_types) if net_type == "SignalNet"]
 
-    # Create capacitance vs frequency and capacitance convergence reports
+    # Detect if ACRL is enabled by checking for inductance output variables
+    unique_elements_l = ["L_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
+    unique_output_l = [e for e in unique_elements_l if e in oOutputVariable.GetOutputVariables()]
+    is_acrl = len(unique_output_l) > 0
+
+    # Create capacitance reports only for capacitance-only simulations (not ACRL)
     unique_elements_c = ["C_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
     unique_output_c = [e for e in unique_elements_c if e in oOutputVariable.GetOutputVariables()]
-    if unique_output_c:
-        create_x_vs_y_plot(
-            oReportSetup,
-            "Capacitance vs Frequency",
-            "Matrix",
-            setup + " : LastAdaptive",
-            ["Context:=", "Original"],
-            ["Freq:=", ["All"]],
-            "Freq",
-            "C",
-            unique_output_c,
-        )
+    if unique_output_c and not is_acrl:
+        # Only create convergence plot (capacitance vs pass), not frequency plot
         create_x_vs_y_plot(
             oReportSetup,
             "Solution Convergence",
@@ -178,59 +173,8 @@ elif design_type == "Q3D Extractor":
             unique_output_c,
         )
 
-    # Create inductance reports if ACRL output variables exist
-    unique_elements_l = ["L_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
-    unique_output_l = [e for e in unique_elements_l if e in oOutputVariable.GetOutputVariables()]
-    if unique_output_l:
-        create_x_vs_y_plot(
-            oReportSetup,
-            "Inductance vs Frequency",
-            "Matrix",
-            setup + " : LastAdaptive",
-            ["Context:=", "Original"],
-            ["Freq:=", ["All"]],
-            "Freq",
-            "L",
-            unique_output_l,
-        )
-        create_x_vs_y_plot(
-            oReportSetup,
-            "Inductance Convergence",
-            "Matrix",
-            setup + " : AdaptivePass",
-            ["Context:=", "Original"],
-            ["Pass:=", ["All"], "Freq:=", ["All"]],
-            "Pass",
-            "L",
-            unique_output_l,
-        )
-
-    # Create resistance reports if ACRL output variables exist
-    unique_elements_r = ["R_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
-    unique_output_r = [e for e in unique_elements_r if e in oOutputVariable.GetOutputVariables()]
-    if unique_output_r:
-        create_x_vs_y_plot(
-            oReportSetup,
-            "Resistance vs Frequency",
-            "Matrix",
-            setup + " : LastAdaptive",
-            ["Context:=", "Original"],
-            ["Freq:=", ["All"]],
-            "Freq",
-            "R",
-            unique_output_r,
-        )
-        create_x_vs_y_plot(
-            oReportSetup,
-            "Resistance Convergence",
-            "Matrix",
-            setup + " : AdaptivePass",
-            ["Context:=", "Original"],
-            ["Pass:=", ["All"], "Freq:=", ["All"]],
-            "Pass",
-            "R",
-            unique_output_r,
-        )
+    # ACRL plots disabled - user wants only geometry window for inductance calculations
+    # (All inductance and resistance plots commented out)
 
 elif design_type == "2D Extractor":
     setup = get_enabled_setup(oDesign, tab="General")

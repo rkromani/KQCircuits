@@ -104,8 +104,6 @@ def export_ansys_bat(
     Returns:
          Path to exported bat file.
     """
-    run_cmd = "RunScriptAndExit" if exit_after_run else "RunScript"
-
     bat_filename = str(path.joinpath(file_prefix + ".bat"))
     with open(bat_filename, "w", encoding="utf-8") as file:
         file.write(
@@ -118,23 +116,56 @@ def export_ansys_bat(
             'Remove-Item blocking_pids.xml"\n'
         )
 
-        # Commands for each simulation
-        for i, json_filename in enumerate(json_filenames):
-            # pylint: disable=consider-using-f-string
-            printing = "echo Simulation {}/{} - {}\n".format(
-                i + 1, len(json_filenames), str(Path(json_filename).relative_to(path))
-            )
-            file.write(printing)
-            command = '"{}" -scriptargs "{}" -{} "{}"\n'.format(
+        # Use batch processing script when not exiting after each run
+        if not exit_after_run and len(json_filenames) > 1:
+            # Use batch script that processes all simulations in one ANSYS session
+            batch_script = str(Path(execution_script).parent.joinpath("batch_import_and_simulate.py"))
+
+            # Create semicolon-separated list of JSON files
+            json_list = ";".join([
+                str(Path(json_filename).relative_to(path) if use_rel_path else json_filename)
+                for json_filename in json_filenames
+            ])
+
+            file.write("echo Processing {} simulations in batch mode...\n".format(len(json_filenames)))
+            command = '"{}" -scriptargs "{}" -RunScriptAndExit "{}"\n'.format(
                 ANSYS_EXECUTABLE,
-                str(Path(json_filename).relative_to(path) if use_rel_path else json_filename),
-                run_cmd,
-                str(execution_script),
+                json_list,
+                batch_script,
             )
             file.write(command)
-            # pylint: enable=consider-using-f-string
+        else:
+            # Original behavior: separate ANSYS invocation for each simulation
+            run_cmd = "RunScriptAndExit" if exit_after_run else "RunScript"
+
+            for i, json_filename in enumerate(json_filenames):
+                # pylint: disable=consider-using-f-string
+                printing = "echo Simulation {}/{} - {}\n".format(
+                    i + 1, len(json_filenames), str(Path(json_filename).relative_to(path))
+                )
+                file.write(printing)
+                command = '"{}" -scriptargs "{}" -{} "{}"\n'.format(
+                    ANSYS_EXECUTABLE,
+                    str(Path(json_filename).relative_to(path) if use_rel_path else json_filename),
+                    run_cmd,
+                    str(execution_script),
+                )
+                file.write(command)
+                # pylint: enable=consider-using-f-string
 
         file.write(get_post_process_command_lines(post_process, path, json_filenames))
+
+        # Add automatic database finalization
+        file.write('\nREM Finalize results to simulation database\n')
+        file.write('echo.\n')
+        file.write('echo Finalizing results to database...\n')
+        # Find repo root (go up from kqcircuits/simulations/export/ansys to repo root)
+        repo_root = Path(__file__).parents[5]
+        finalize_script = repo_root / 'finalize_results.py'
+        if finalize_script.exists():
+            file.write(f'python "{finalize_script}" "{path}"\n')
+            file.write('echo Done! Results saved to simulations_database\n')
+        file.write('pause\n')
 
     # Make the bat file executable in linux
     os.chmod(bat_filename, os.stat(bat_filename).st_mode | stat.S_IEXEC)

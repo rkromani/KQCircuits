@@ -29,6 +29,10 @@ from kqcircuits.simulations.export.simulation_export import (
     export_simulation_oas,
 )
 
+# Import simulation database manager
+sys.path.insert(0, str(Path(__file__).parents[4]))  # Add repo root to path
+from simulations_database.tools.simulation_db import SimulationDB
+
 from kqcircuits.elements.resonator_spike import ResonatorSpike
 from kqcircuits.simulations.post_process import PostProcess
 from kqcircuits.simulations.single_element_simulation import get_single_element_sim_class
@@ -97,11 +101,11 @@ sim_parameters = {
     "box": pya.DBox(pya.DPoint(0, -700), pya.DPoint(1000, 3000)),
     "shadow_angle_1": 0,
     "shadow_angle_2": 0,
-    "spike_number": 1,
-    #"spike_height": 1,
+    #"spike_number": 1,
+    "spike_height": 2,
     "spike_base_width": 2,
     "t_cut_number": 0,
-    "end_box_height": 1000, 
+    "end_box_height": 420, 
     "l_height": 1600,
     "spike_gap": 0.5,
     "face_stack": ["1t1"],
@@ -119,14 +123,15 @@ export_parameters = {
     "path": dir_path,
     "ansys_tool": "q3d",
     "post_process": PostProcess("produce_cmatrix_table.py"),
-    "exit_after_run": True,
+    "exit_after_run": False,
     "percent_error": 0.3,  # Reasonable accuracy (0.2-0.5 typical for production)
     "minimum_converged_passes": 2,
     "maximum_passes": 20,
     "use_floating_islands": True,  # Treat isolated spike system as floating net
     # Custom mesh refinement for accurate results in spike regions
     "mesh_size": {
-        "1t1_mesh_1": 1,    # Fine mesh around spike regions (1 µm)
+        "1t1_mesh_1": 0.25,    # Fine mesh around spike regions (0.25 µm)
+        "1t1_mesh_3": 3,    # Fine mesh around cap regions (3 µm)
     },
 }
 
@@ -143,9 +148,9 @@ simulations += cross_sweep_simulation(
     SimClass,
     sim_parameters,
     {
-        #"spike_number": [50, 100, 200, 300, 400, 500],
+        "spike_number": [0, 5, 10, 15, 20],
         #"spike_gap": [0.025, 0.05, 0.1, 0.15, 0.2,],
-        "spike_height": [2.0, 4.0, 10.0, 15.0, 20.0],
+        #"spike_height": [2.0, 4.0, 10.0, 15.0, 20.0],
         #"spike_base_width": [0.125, 0.25, 0.5, 1.0, 2.0],
     },
 )
@@ -174,6 +179,16 @@ simulations += cross_sweep_simulation(
 #     },
 # )
 
+# Register simulations with database
+db = SimulationDB()
+db_folders = db.register_simulations(
+    simulations=simulations,
+    design_name='spike_resonator',
+    sim_parameters=sim_parameters,
+    export_parameters=export_parameters,
+    output_folder=dir_path
+)
+
 # Export Ansys Q3D files
 export_ansys(simulations, **export_parameters)
 
@@ -182,6 +197,13 @@ oas_file = export_simulation_oas(simulations, dir_path)
 print(f"Exported Q3D simulation files to: {dir_path}")
 print(f"OAS file: {oas_file}")
 print(f"Number of simulations: {len(simulations)}")
+
+# Print next steps for database workflow
+print(f"\n{'='*60}")
+print(f"→ Next step:")
+print(f"  Run ANSYS simulations: {dir_path}/simulation.bat")
+print(f"  (Results will be automatically saved to database)")
+print(f"{'='*60}\n")
 
 # Optionally open in KLayout
 if not args.no_gui:

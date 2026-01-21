@@ -51,7 +51,6 @@ from field_calculation import (  # pylint: disable=wrong-import-position
 # pylint: disable=consider-using-f-string
 # Set up environment
 ScriptEnv.Initialize("Ansoft.ElectronicsDesktop")
-oDesktop.AddMessage("", "", 0, "Starting import script (%s)" % time.asctime(time.localtime()))
 
 # Import metadata (bounding box and port information)
 jsonfile = ScriptArgument
@@ -61,6 +60,7 @@ with open(jsonfile, "r") as fjsonfile:  # pylint: disable=unspecified-encoding
     data = json.load(fjsonfile)
 
 ansys_tool = data.get("ansys_tool", "hfss")
+solve_acrl = data.get("analysis_setup", {}).get("solve_acrl", False)
 
 simulation_flags = data["simulation_flags"]
 gds_file = data["gds_file"]
@@ -468,7 +468,7 @@ if ansys_tool in hfss_tools:
 
 elif ansys_tool == "q3d":
     # Check if this is an ACRL simulation (needs conductor as SignalNet, not ground)
-    solve_acrl = data.get("analysis_setup", {}).get("solve_acrl", False)
+    # solve_acrl is now defined globally at the top of the script
 
     excitations = {d["excitation"] for d in metal_layers.values()}
     for excitation in excitations:
@@ -479,7 +479,6 @@ elif ansys_tool == "q3d":
         # This allows ACRL source/sink assignment on the main conductor
         if excitation == 0 and solve_acrl and len(data.get("ports", [])) > 0:
             oBoundarySetup.AssignSignalNet(["NAME:Net1", "Objects:=", objs])
-            oDesktop.AddMessage("", "", 0, "ACRL mode: Assigning excitation=0 objects as SignalNet (Net1) instead of ground")
         elif excitation == 0:
             for i, obj in enumerate(objs):
                 oBoundarySetup.AssignGroundNet(["NAME:Ground{}".format(i + 1), "Objects:=", [obj]])
@@ -549,13 +548,13 @@ for mesh_name, mesh_length in mesh_size.items():
             ]
         )
 
-# Delete mesh layer objects now that mesh refinement is assigned
-# This prevents mesh objects from interfering with net assignment (causing disjoint net errors)
-if mesh_layers_all:
+# Delete mesh layer objects for ACRL simulations only
+# ACRL simulations: Mesh objects cause disjoint net errors, so delete after mesh assignment
+# Capacitance-only simulations: Keep mesh objects for proper mesh refinement
+if mesh_layers_all and solve_acrl:
     mesh_objects_to_delete = [o for l in set(mesh_layers_all) if l in objects for o in objects[l]]
     if mesh_objects_to_delete:
         oEditor.Delete(["NAME:Selections", "Selections:=", ",".join(mesh_objects_to_delete)])
-        oDesktop.AddMessage("", "", 0, "Deleted {} mesh layer objects after mesh assignment".format(len(mesh_objects_to_delete)))
         # Remove mesh layers from objects dict so they won't be referenced later
         for l in set(mesh_layers_all):
             if l in objects:
@@ -838,7 +837,6 @@ if not ansys_project_template:
                             "sink_location": acrl_locs["sink"],
                         }
                     }
-                    oDesktop.AddMessage("", "", 0, "ACRL: Using port locations from design extra_json_data")
                 # Fallback: try ports (legacy method)
                 elif "ports" in data and len(data["ports"]) >= 2:
                     port1 = data["ports"][0]
@@ -850,7 +848,6 @@ if not ansys_project_template:
                                 "sink_location": port2["signal_location"],
                             }
                         }
-                        oDesktop.AddMessage("", "", 0, "ACRL: Using port locations from design (port 1 = source, port 2 = sink)")
 
             if acrl_sources:
                 # User specified source/sink locations manually
@@ -956,15 +953,6 @@ if not ansys_project_template:
                                                 "Net:=", net_name,
                                             ]
                                         )
-
-                                        oDesktop.AddMessage(
-                                            "",
-                                            "",
-                                            0,
-                                            "ACRL source/sink assigned to {}: source edge {}, sink edge {}".format(
-                                                net_name, source_edge_id, sink_edge_id
-                                            ),
-                                        )
                                     else:
                                         oDesktop.AddMessage("", "", 2, "Warning: Could not find edges for {}: source_edge={}, sink_edge={}".format(
                                             net_name, source_edge_id, sink_edge_id))
@@ -973,14 +961,6 @@ if not ansys_project_template:
                 except Exception as e:
                     oDesktop.AddMessage("", "", 2, "Warning: ACRL source/sink assignment failed: " + str(e))
 
-        # Log ACRL status
-        if solve_acrl:
-            oDesktop.AddMessage(
-                "",
-                "",
-                1,
-                "Q3D ACRL enabled: will extract inductance (L) and resistance (R) matrices in addition to capacitance (C)",
-            )
     elif ansys_tool == "eigenmode":
         # Create EM setup
         setup_list = [
@@ -1038,6 +1018,4 @@ else:  # use ansys_project_template
 # Fit window to objects
 oEditor.FitAll()
 
-# Notify the end of script
-oDesktop.AddMessage("", "", 0, "Import completed (%s)" % time.asctime(time.localtime()))
 # pylint: enable=consider-using-f-string
