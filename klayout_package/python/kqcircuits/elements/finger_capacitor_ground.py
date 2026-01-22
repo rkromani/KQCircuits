@@ -63,6 +63,8 @@ class FingerCapacitorGround(Element):
     fixed_length = Param(pdt.TypeDouble, "Fixed length of element, 0 for auto-length", 0, unit="μm")
     ground_gap_ratio = Param(pdt.TypeDouble, "Ground connection width per gap ratio", 0, unit="μm")
 
+    cutout_bool = Param(pdt.TypeBoolean, "Whether to cut out the center conductor for capacitance sims", False)
+
     def can_create_from_shape_impl(self):
         return self.shape.is_path()
 
@@ -89,16 +91,28 @@ class FingerCapacitorGround(Element):
             ).to_itype(self.layout.dbu)
         )
 
-        region_center = pya.Region(
-            pya.DPolygon(
-                [
-                    pya.DPoint(-self.a/2, -y_mid - self.ground_padding*2),
-                    pya.DPoint(-self.a/2, y_mid + self.ground_padding*2),
-                    pya.DPoint(self.a/2,  y_mid + self.ground_padding*2),
-                    pya.DPoint(self.a/2, -y_mid - self.ground_padding*2),
-                ]
-            ).to_itype(self.layout.dbu)
-        )
+        if self.cutout_bool:
+            region_center = pya.Region(
+                pya.DPolygon(
+                    [
+                        pya.DPoint(-self.a/2, -y_mid - self.ground_padding*0.5),
+                        pya.DPoint(-self.a/2, y_mid + self.ground_padding*0.5),
+                        pya.DPoint(self.a/2,  y_mid + self.ground_padding*0.5),
+                        pya.DPoint(self.a/2, -y_mid - self.ground_padding*0.5),
+                    ]
+                ).to_itype(self.layout.dbu)
+            )
+        else:
+            region_center = pya.Region(
+                pya.DPolygon(
+                    [
+                        pya.DPoint(-self.a/2, -y_mid - self.ground_padding*2),
+                        pya.DPoint(-self.a/2, y_mid + self.ground_padding*2),
+                        pya.DPoint(self.a/2,  y_mid + self.ground_padding*2),
+                        pya.DPoint(self.a/2, -y_mid - self.ground_padding*2),
+                    ]
+                ).to_itype(self.layout.dbu)
+            )
 
         region_ground_right = pya.Region(
             pya.DPolygon(
@@ -176,6 +190,7 @@ class FingerCapacitorGround(Element):
         #self.add_waveguides(region_etch, x_end, y_left, y_right)
 
         region_ground.round_corners(self.corner_r / self.layout.dbu, self.corner_r / self.layout.dbu, self.n)
+        
         region = region_ground - region_etch
 
         self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(region)
