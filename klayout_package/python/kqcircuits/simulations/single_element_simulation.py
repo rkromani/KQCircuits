@@ -176,3 +176,114 @@ def get_single_element_sim_class(
     )
     add_parameters_from(element_class)(element_sim_class)
     return element_sim_class
+
+
+def get_acrl_sim_class(
+    element_class: Element,
+    ignore_ports: list[str] | None = None,
+    transformation_from_center: Callable[[pya.Cell], pya.DTrans] | None = None,
+    partition_region_function: Callable[[Simulation], list[PartitionRegion]] | None = None,
+    sim_junction_type: str = "Sim",
+    deembed_cross_sections: dict[str] = None,
+) -> type[Simulation]:
+    """Creates a simulation class for ACRL (AC Resistance and Inductance) measurements.
+
+    This function builds on get_single_element_sim_class() and automatically detects
+    numbered ACRL refpoints (acrl_source_N, acrl_sink_N) in the element geometry.
+    The refpoint coordinates are stored in extra_json_data for use by ANSYS import scripts.
+
+    Args:
+        element_class: Element class to create ACRL simulation for
+        ignore_ports: Optional list of refpoint names to ignore when creating ports
+        transformation_from_center: Optional transformation function for element placement
+        partition_region_function: Optional function to define partition regions
+        sim_junction_type: Junction type for simulation (default "Sim")
+        deembed_cross_sections: Optional cross-section definitions for deembedding
+
+    Returns:
+        Simulation class configured for ACRL measurements with numbered inductors
+
+    Example:
+        The element should define refpoints like:
+        - acrl_source_1, acrl_sink_1 for first inductor
+        - acrl_source_2, acrl_sink_2 for second inductor
+        - etc.
+
+        These will be stored in extra_json_data as:
+        {
+            "acrl_port_locations": {
+                1: {"source": [x1, y1, z1], "sink": [x2, y2, z2]},
+                2: {"source": [x3, y3, z3], "sink": [x4, y4, z4]},
+                ...
+            }
+        }
+    """
+    # Get base simulation class
+    BaseSimClass = get_single_element_sim_class(
+        element_class,
+        ignore_ports,
+        transformation_from_center,
+        partition_region_function,
+        sim_junction_type,
+        deembed_cross_sections,
+    )
+
+    # Create ACRL-enabled subclass
+    class ACRLSimulation(BaseSimClass):
+        """Simulation class that automatically extracts numbered ACRL refpoints."""
+
+        def build(self):
+            # Build element geometry and get refpoints
+            super().build()
+
+            # Find all numbered ACRL refpoints
+            acrl_locations = {}
+
+            # Search for acrl_source_N and acrl_sink_N pairs
+            for refpoint_name, refpoint_location in self.refpoints.items():
+                if refpoint_name.startswith("acrl_source_"):
+                    try:
+                        # Extract inductor number from refpoint name
+                        num = int(refpoint_name.split("_")[-1])
+                        if num not in acrl_locations:
+                            acrl_locations[num] = {}
+                        acrl_locations[num]["source"] = [refpoint_location.x, refpoint_location.y, 0.0]
+                    except (ValueError, IndexError):
+                        continue
+
+                elif refpoint_name.startswith("acrl_sink_"):
+                    try:
+                        num = int(refpoint_name.split("_")[-1])
+                        if num not in acrl_locations:
+                            acrl_locations[num] = {}
+                        acrl_locations[num]["sink"] = [refpoint_location.x, refpoint_location.y, 0.0]
+                    except (ValueError, IndexError):
+                        continue
+
+            # Store in extra_json_data if any ACRL pairs were found
+            if acrl_locations:
+                # Create one InternalPort per inductor to designate as separate nets
+                from kqcircuits.simulations.port import InternalPort
+
+                for num in sorted(acrl_locations.keys()):
+                    if "source" in acrl_locations[num] and "sink" in acrl_locations[num]:
+                        # Create port at midpoint between source and sink to designate net
+                        src = acrl_locations[num]["source"]
+                        snk = acrl_locations[num]["sink"]
+                        mid_x = (src[0] + snk[0]) / 2
+                        mid_y = (src[1] + snk[1]) / 2
+
+                        self.ports.append(
+                            InternalPort(
+                                number=num,
+                                signal_location=pya.DPoint(mid_x, mid_y),
+                                ground_location=None
+                            )
+                        )
+
+                # Store ACRL locations for ANSYS import script
+                self.extra_json_data = {
+                    "acrl_port_locations": acrl_locations
+                }
+
+    return ACRLSimulation

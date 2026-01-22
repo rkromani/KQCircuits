@@ -764,6 +764,7 @@ if not ansys_project_template:
     elif ansys_tool == "q3d":
         # Check if ACRL (inductance/resistance) extraction is enabled
         solve_acrl = setup.get("solve_acrl", False)
+        oDesktop.AddMessage("", "", 0, "Q3D setup: solve_acrl = {}".format(solve_acrl))
 
         # Build setup parameters
         setup_params = [
@@ -778,6 +779,7 @@ if not ansys_project_template:
 
         # Choose between Cap-only or ACRL-only mode
         if solve_acrl:
+            oDesktop.AddMessage("", "", 0, "Creating ACRL (AC block) setup")
             # ACRL mode: Only AC block (skip Cap to avoid conflicts)
             setup_params.append([
                 "NAME:AC",
@@ -791,6 +793,12 @@ if not ansys_project_template:
                 setup["percent_error"],
                 "PerRefine:=",
                 setup["percent_refinement"],
+                "AutoIncreaseSolutionOrder:=",
+                True,
+                "SolutionOrder:=",
+                "High",
+                "Solver Type:=",
+                "Iterative",
                 "ACRLSolverType:=",
                 "ACA",
             ])
@@ -830,7 +838,19 @@ if not ansys_project_template:
                 params = data.get("parameters", {})
                 extra_data = params.get("extra_json_data", {})
                 acrl_locs = extra_data.get("acrl_port_locations", {})
-                if "source" in acrl_locs and "sink" in acrl_locs:
+
+                # Check if using numbered format (new): {1: {"source": [...], "sink": [...]}, 2: {...}}
+                if acrl_locs and isinstance(acrl_locs.get(next(iter(acrl_locs.keys()), 1)), dict):
+                    # Numbered format - create source/sink for each numbered inductor
+                    acrl_sources = {}
+                    for num, locs in acrl_locs.items():
+                        if "source" in locs and "sink" in locs:
+                            acrl_sources["Net{}".format(num)] = {
+                                "source_location": locs["source"],
+                                "sink_location": locs["sink"],
+                            }
+                # Check if using legacy format (old): {"source": [...], "sink": [...]}
+                elif "source" in acrl_locs and "sink" in acrl_locs:
                     acrl_sources = {
                         "Net1": {
                             "source_location": acrl_locs["source"],

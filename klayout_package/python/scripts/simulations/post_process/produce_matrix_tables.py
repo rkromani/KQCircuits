@@ -45,38 +45,58 @@ if result_files:
     cmatrix = {}
     lmatrix = {}
     rmatrix = {}
+    has_capacitance = False
     has_inductance = False
     has_resistance = False
 
     for key, result_file in zip(parameter_values.keys(), result_files):
         result = load_json(result_file)
 
-        # Extract capacitance matrix
+        # Helper function to check if matrix data is valid (not all NaN)
+        def is_valid_matrix(matrix_data):
+            """Check if matrix contains valid numeric data (not NaN/None)"""
+            if matrix_data is None:
+                return False
+            try:
+                # Flatten the matrix and check if any values are valid numbers
+                import math
+                for row in matrix_data:
+                    for val in (row if isinstance(row, list) else [row]):
+                        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                            return True
+                return False
+            except (TypeError, AttributeError):
+                return False
+
+        # Extract capacitance matrix (if present and valid - not available in ACRL mode)
         cdata = result.get("CMatrix") or result.get("Cs")
-        if cdata is None:
-            print(f"Neither 'CMatrix' nor 'Cs' found in the result file {result_file}")
-            continue
-        cmatrix[key] = {f"C{i+1}{j+1}": c for i, l in enumerate(cdata) for j, c in enumerate(l)}
+        if is_valid_matrix(cdata):
+            has_capacitance = True
+            cmatrix[key] = {f"C{i+1}{j+1}": c for i, l in enumerate(cdata) for j, c in enumerate(l)}
 
         # Extract inductance matrix if ACRL was enabled
         ldata = result.get("LMatrix") or result.get("Ls")
-        if ldata is not None:
+        if is_valid_matrix(ldata):
             has_inductance = True
             lmatrix[key] = {f"L{i+1}{j+1}": l for i, l_row in enumerate(ldata) for j, l in enumerate(l_row)}
 
         # Extract resistance matrix if ACRL was enabled
         rdata = result.get("RMatrix") or result.get("Rs")
-        if rdata is not None:
+        if is_valid_matrix(rdata):
             has_resistance = True
             rmatrix[key] = {f"R{i+1}{j+1}": r for i, r_row in enumerate(rdata) for j, r in enumerate(r_row)}
 
     # Deembedding (currently only for capacitance)
+    # Skip deembedding if no capacitance data available (e.g., ACRL mode)
     try:
+        if not has_capacitance or not cmatrix:
+            raise ValueError("Skipping deembedding - no capacitance data available")
+
         def_data_cs = {}
         def_data_3d = {}
         for key, def_file in zip(parameter_values.keys(), definition_files):
             data = load_json(def_file)
-            (def_data_cs if data["tool"] == "cross-section" else def_data_3d)[key] = data
+            (def_data_cs if data.get("tool") == "cross-section" else def_data_3d)[key] = data
 
         for key, def_data in def_data_3d.items():
             for port in def_data.get("ports", []):
@@ -102,9 +122,10 @@ if result_files:
     # Output results to CSV tables
     output_basename = os.path.basename(os.path.abspath(path))
 
-    # Always output capacitance matrix
-    tabulate_into_csv(f"{output_basename}_cmatrix_results.csv", cmatrix, parameters, parameter_values)
-    print(f"Capacitance matrix table created: {output_basename}_cmatrix_results.csv")
+    # Output capacitance matrix if present (not available in ACRL mode)
+    if has_capacitance and cmatrix:
+        tabulate_into_csv(f"{output_basename}_cmatrix_results.csv", cmatrix, parameters, parameter_values)
+        print(f"Capacitance matrix table created: {output_basename}_cmatrix_results.csv")
 
     # Output inductance matrix if ACRL was used
     if has_inductance and lmatrix:

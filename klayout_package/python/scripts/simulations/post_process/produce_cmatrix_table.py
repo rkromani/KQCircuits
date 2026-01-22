@@ -55,7 +55,7 @@ if result_files:
         def_data_3d = {}
         for key, def_file in zip(parameter_values.keys(), definition_files):
             data = load_json(def_file)
-            (def_data_cs if data["tool"] == "cross-section" else def_data_3d)[key] = data
+            (def_data_cs if data["ansys_tool"] == "cross-section" else def_data_3d)[key] = data
 
         for key, def_data in def_data_3d.items():
             for port in def_data.get("ports", []):

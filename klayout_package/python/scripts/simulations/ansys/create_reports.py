@@ -21,6 +21,7 @@
 import os
 import sys
 import time
+import json
 
 import ScriptEnv
 
@@ -42,6 +43,14 @@ oDesign = oProject.GetActiveDesign()
 oBoundarySetup = oDesign.GetModule("BoundarySetup")
 oOutputVariable = oDesign.GetModule("OutputVariable")
 oReportSetup = oDesign.GetModule("ReportSetup")
+
+# Read JSON file to check for ACRL setting
+jsonfile = ScriptArgument
+is_acrl = False
+if os.path.exists(jsonfile):
+    with open(jsonfile, "r") as fp:  # pylint: disable=unspecified-encoding
+        data = json.load(fp)
+        is_acrl = data.get("analysis_setup", {}).get("solve_acrl", False)
 
 # Create model separately for HFSS and Q3D
 oDesktop.AddMessage("", "", 0, "Creating reports (%s)" % time.asctime(time.localtime()))
@@ -151,30 +160,50 @@ elif design_type == "Q3D Extractor":
     net_types = oBoundarySetup.GetExcitations()[1::2]
     signal_nets = [net for net, net_type in zip(nets, net_types) if net_type == "SignalNet"]
 
-    # Detect if ACRL is enabled by checking for inductance output variables
-    unique_elements_l = ["L_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
-    unique_output_l = [e for e in unique_elements_l if e in oOutputVariable.GetOutputVariables()]
-    is_acrl = len(unique_output_l) > 0
-
-    # Create capacitance reports only for capacitance-only simulations (not ACRL)
-    unique_elements_c = ["C_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
-    unique_output_c = [e for e in unique_elements_c if e in oOutputVariable.GetOutputVariables()]
-    if unique_output_c and not is_acrl:
-        # Only create convergence plot (capacitance vs pass), not frequency plot
-        create_x_vs_y_plot(
-            oReportSetup,
-            "Solution Convergence",
-            "Matrix",
-            setup + " : AdaptivePass",
-            ["Context:=", "Original"],
-            ["Pass:=", ["All"], "Freq:=", ["All"]],
-            "Pass",
-            "C",
-            unique_output_c,
-        )
-
-    # ACRL plots disabled - user wants only geometry window for inductance calculations
-    # (All inductance and resistance plots commented out)
+    # Create plots based on simulation type (ACRL vs capacitance-only)
+    # is_acrl is read from JSON configuration above
+    if is_acrl:
+        # ACRL mode: Create inductance convergence plot
+        # Query available inductance quantities from ANSYS to get correct naming
+        each_pass = setup + " : AdaptivePass"
+        context = ["Context:=", "Original"]
+        try:
+            output_l = get_quantities(oReportSetup, "Matrix", each_pass, context, "L Matrix")
+            if output_l:
+                create_x_vs_y_plot(
+                    oReportSetup,
+                    "Inductance Convergence",
+                    "Matrix",
+                    each_pass,
+                    context,
+                    ["Pass:=", ["All"], "Freq:=", ["All"]],
+                    "Pass",
+                    "L [H]",
+                    output_l,
+                )
+                oDesktop.AddMessage("", "", 0, "Created inductance convergence plot for ACRL simulation")
+            else:
+                oDesktop.AddMessage("", "", 1, "No inductance quantities found for ACRL plot")
+        except Exception as e:
+            oDesktop.AddMessage("", "", 2, "Could not create inductance plot: {}".format(e))
+    else:
+        # Capacitance-only mode: Create capacitance convergence plot
+        unique_elements_c = ["C_%s_%s" % (net_i, net_j) for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
+        try:
+            create_x_vs_y_plot(
+                oReportSetup,
+                "Solution Convergence",
+                "Matrix",
+                setup + " : AdaptivePass",
+                ["Context:=", "Original"],
+                ["Pass:=", ["All"], "Freq:=", ["All"]],
+                "Pass",
+                "C",
+                unique_elements_c,
+            )
+            oDesktop.AddMessage("", "", 0, "Created capacitance convergence plot")
+        except Exception as e:
+            oDesktop.AddMessage("", "", 2, "Could not create capacitance plot: {}".format(e))
 
 elif design_type == "2D Extractor":
     setup = get_enabled_setup(oDesign, tab="General")

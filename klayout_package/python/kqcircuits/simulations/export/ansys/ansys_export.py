@@ -160,10 +160,13 @@ def export_ansys_bat(
         file.write('echo.\n')
         file.write('echo Finalizing results to database...\n')
         # Find repo root (go up from kqcircuits/simulations/export/ansys to repo root)
-        repo_root = Path(__file__).parents[5]
+        repo_root = Path(__file__).parents[6]
         finalize_script = repo_root / 'finalize_results.py'
+        # Use virtual environment Python if it exists, otherwise system Python
+        venv_python = repo_root / 'env-kqcircuits-py312' / 'Scripts' / 'python.exe'
+        python_cmd = str(venv_python) if venv_python.exists() else 'python'
         if finalize_script.exists():
-            file.write(f'python "{finalize_script}" "{path}"\n')
+            file.write(f'"{python_cmd}" "{finalize_script}" "{path}"\n')
             file.write('echo Done! Results saved to simulations_database\n')
         file.write('pause\n')
 

@@ -31,6 +31,8 @@ class ResonatorSpike(Element):
 
     feedline_length = Param(pdt.TypeDouble, "Feedline length", 700, unit="μm")
     feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 10, unit="μm")
+    feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
+    feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", True)
 
     l_width = Param(pdt.TypeDouble, "Inductor width", 3, unit="μm")
     l_coupling_length = Param(pdt.TypeDouble, "Inductor coupling length", 250, unit="μm")
@@ -40,6 +42,7 @@ class ResonatorSpike(Element):
     l_ground_gap = Param(pdt.TypeDouble, "Inductor ground gap", 120, unit="μm")
     l_grounding_distance = Param(pdt.TypeDouble, "Inductor grounding distance from side of capacitor", 20, unit="μm")
     l_junction_width = Param(pdt.TypeDouble, "Width of inductor above end box used for coupling junction", 15, unit="μm")
+    l_junction_spacing = Param(pdt.TypeDouble, "Spacing between top of capacitor ground and junction", 15, unit="μm")
 
     end_box_width = Param(pdt.TypeDouble, "End box width", 20, unit="μm")
     end_box_height = Param(pdt.TypeDouble, "End box height", 50, unit="μm")
@@ -59,9 +62,16 @@ class ResonatorSpike(Element):
     spike_number = Param(pdt.TypeInt, "Number of spikes", 8)
 
     junction_bool = Param(pdt.TypeBoolean, "Whether to add junction", True)
+    #total_junction_height = Param(pdt.TypeDouble, "Total junction height", 20, unit="μm", readonly=True)
+    junction_pad_height = Param(pdt.TypeDouble, "Junction pad height", 10, unit="μm")
+    junction_finger_length = Param(pdt.TypeDouble, "Length of junction finger", 5, unit="μm")
+    junction_finger_tip_length = Param(pdt.TypeDouble, "Length of junction finger tip", 1, unit="μm")
+    junction_overshoot = Param(pdt.TypeDouble, "Amount the junction hook extends beyond the finger width and finger beyond hook", 0.5, unit="μm")
+    
+
     include_inductor = Param(pdt.TypeBoolean, "Include inductor (disable for Q3D capacitance measurements)", True)
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers (disable for Q3D ACRL due to ANSYS bug)", True)
-    total_junction_height = Param(pdt.TypeDouble, "Total junction height", 20, unit="μm", readonly=True)
+
 
     
     shadow_angle_1 = Param(pdt.TypeDouble, "Angle of shadow 1", 30, unit="deg")
@@ -109,7 +119,9 @@ class ResonatorSpike(Element):
         feedline_region = self._make_feedline()
 
         if self.junction_bool:
-            self._make_junction()
+            inductor_extension = self._make_junction()
+        else:
+            inductor_extension = pya.Region()
         
         if (self.spike_number != 0) and (self.t_cut_number != 0):
             t_cut_region = self._make_t_cuts()
@@ -128,10 +140,10 @@ class ResonatorSpike(Element):
         )
 
         self.cell.shapes(self.get_layer("base_metal_gap")).insert(
-            ground_gap_region + feedline_region - inductor_region - end_box_region + t_cut_region
+            ground_gap_region + feedline_region - inductor_region - end_box_region - inductor_extension + t_cut_region
         )
         self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
-            ground_gap_region + feedline_region - inductor_region - end_box_region + t_cut_region - spikes_combined
+            ground_gap_region + feedline_region - inductor_region - end_box_region - inductor_extension + t_cut_region - spikes_combined
         )
 
         # Add mesh control regions for fine-grained ANSYS mesh refinement
@@ -160,46 +172,37 @@ class ResonatorSpike(Element):
         self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
         self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
 
-        # Add ACRL source/sink port markers for Q3D inductance measurements through the inductor
-        # These are visual markers that simulation scripts can use to define ACRL edge locations
-        # Source: bottom of end box (capacitor side)
-        # Sink: bottom of inductor (ground side)
+        # Add numbered ACRL source/sink refpoints for Q3D inductance measurements
+        # These refpoints will be automatically detected by get_acrl_sim_class()
+        # Format: acrl_source_N and acrl_sink_N where N is the inductor number
         if self.include_inductor:
+            # Inductor 1: Main inductor loop
             source_x = (self.end_box_left + self.end_box_right) / 2  # Center of end box
             source_y = self.end_box_bottom
-            self.add_port("Net1_source", pya.DPoint(source_x, source_y), pya.DVector(0, -1))
+            self.refpoints["acrl_source_1"] = pya.DPoint(source_x, source_y)
 
             sink_x = self.end_box_far_left - 1.5 * self.l_grounding_distance  # Where inductor grounds
             sink_y = self.ground_gap_bottom  # Bottom of inductor at ground
-            self.add_port("Net1_sink", pya.DPoint(sink_x, sink_y), pya.DVector(0, -1))
+            self.refpoints["acrl_sink_1"] = pya.DPoint(sink_x, sink_y)
+
+            # Inductor 2: Feedline to feedline measurement (if cutout enabled)
+            if self.feedline_cutout_bool:
+                self.refpoints["acrl_source_2"] = pya.DPoint(self.feedline_length/2, 0)
+                self.refpoints["acrl_sink_2"] = pya.DPoint(-self.feedline_length/2, 0)
 
     @classmethod
     def get_sim_ports(cls, simulation):
-        """Define ACRL source/sink ports for Q3D inductance simulations.
+        """Define simulation ports for non-ACRL simulations.
 
-        For ACRL simulations (solve_acrl=True), return empty list since we don't want
-        to create port-based excitations - port locations are only used as markers.
+        For ACRL simulations, refpoints (acrl_source_N, acrl_sink_N) are used instead
+        and automatically detected by get_acrl_sim_class().
 
-        Returns list of RefpointToInternalPort objects that will be converted to
-        InternalPort objects during simulation export. These port coordinates will
-        be used by ANSYS import script to find nearest edges for ACRL source/sink assignment.
+        For non-ACRL simulations, this method could return ports if needed.
+        Currently returns empty list - override in simulation script if ports are needed.
         """
-        from kqcircuits.util.refpoints import RefpointToInternalPort
-
-        # Only add ACRL ports when inductor is included
-        if not simulation.include_inductor:
-            return []
-
-        # For ACRL simulations, don't create port excitations
-        # Port locations are exported in extra_json_data instead
-        if hasattr(simulation, 'solve_acrl') and simulation.solve_acrl:
-            return []
-
-        # Refpoint names have "port_" prefix added by add_port()
-        return [
-            RefpointToInternalPort("port_Net1_source"),
-            RefpointToInternalPort("port_Net1_sink"),
-        ]
+        # ACRL simulations use refpoints instead of ports
+        # Non-ACRL simulations don't currently need ports for this element
+        return []
 
     def _make_inductor(self):
         ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2 + self.angle_evap_offset)
@@ -207,12 +210,12 @@ class ResonatorSpike(Element):
         end_box_top = self.end_box_spacing + self.ground_gap_bottom + self.end_box_height
     
         pts_ind = [
-                pya.DPoint(-self.l_coupling_length/2 - self.l_width/2, self.end_box_top + self.l_junction_width + self.l_radius),
-                pya.DPoint(self.end_box_far_left - self.l_grounding_distance - self.l_width/2, self.end_box_top + self.l_junction_width + self.l_radius),
+                pya.DPoint(-self.l_coupling_length/2 - self.l_width/2, self.end_box_top + self.l_junction_width + self.l_junction_spacing + self.l_radius),
+                pya.DPoint(self.end_box_far_left - self.l_grounding_distance - self.l_width/2, self.end_box_top + self.l_junction_width + self.l_junction_spacing + self.l_radius),
                 pya.DPoint(self.end_box_far_left - self.l_grounding_distance - self.l_width/2, ground_gap_bottom - 2* self.a),
                 pya.DPoint(self.end_box_far_left - self.l_grounding_distance + self.l_width/2, ground_gap_bottom - 2* self.a),
-                pya.DPoint(self.end_box_far_left - self.l_grounding_distance + self.l_width/2, self.end_box_top + self.l_junction_width + self.l_width + self.l_radius),
-                pya.DPoint(-self.l_coupling_length/2 + self.l_width/2, self.end_box_top + self.l_junction_width + self.l_width + self.l_radius),
+                pya.DPoint(self.end_box_far_left - self.l_grounding_distance + self.l_width/2, self.end_box_top + self.l_junction_width + self.l_junction_spacing + self.l_width + self.l_radius),
+                pya.DPoint(-self.l_coupling_length/2 + self.l_width/2, self.end_box_top + self.l_junction_width + self.l_junction_spacing + self.l_width + self.l_radius),
                 pya.DPoint(-self.l_coupling_length/2 + self.l_width/2, ground_gap_top - self.l_coupling_distance - self.l_width),
                 pya.DPoint(self.l_coupling_length/2 - self.l_width/2, ground_gap_top - self.l_coupling_distance - self.l_width),
                 pya.DPoint(self.l_coupling_length/2 - self.l_width/2, end_box_top - 2 * self.a),
@@ -228,7 +231,7 @@ class ResonatorSpike(Element):
     def _make_end_box(self):
 
         if self.junction_bool:
-            top_addition = self.l_junction_width
+            top_addition = self.l_junction_width + self.l_junction_spacing
         else:
             top_addition = 0
         
@@ -242,10 +245,10 @@ class ResonatorSpike(Element):
         end_box_region = pya.Region(pya.DPolygon(pts_end_box).to_itype(self.layout.dbu))
 
         pts_boxes_l = [
-            pya.DPoint(self.end_box_left - self.spike_region_width, self.end_box_top + top_addition),
+            pya.DPoint(self.end_box_left - self.spike_region_width, self.end_box_top),
             pya.DPoint(self.end_box_left - self.spike_region_width, self.ground_gap_bottom),
             pya.DPoint(self.end_box_left - self.spike_region_width - self.end_box_width, self.ground_gap_bottom),
-            pya.DPoint(self.end_box_left - self.spike_region_width - self.end_box_width, self.end_box_top + top_addition),
+            pya.DPoint(self.end_box_left - self.spike_region_width - self.end_box_width, self.end_box_top),
         ]
 
         pts_boxes_r = [
@@ -280,7 +283,26 @@ class ResonatorSpike(Element):
                 ]
         bottom_region = pya.Region(pya.DPolygon(pts_bottom).to_itype(self.layout.dbu))
 
-        return top_region + bottom_region
+        if self.feedline_cutout_bool:
+            cutout_l_pts = [
+                pya.DPoint(-self.feedline_length/2, -self.a/2 - self.b),
+                pya.DPoint(-self.feedline_length/2 - self.feedline_cutout, -self.a/2 - self.b),
+                pya.DPoint(-self.feedline_length/2 - self.feedline_cutout, self.a/2 + self.b),
+                pya.DPoint(-self.feedline_length/2, self.a/2 + self.b),
+            ]
+            cutout_r_pts = [
+                pya.DPoint(self.feedline_length/2, -self.a/2 - self.b),
+                pya.DPoint(self.feedline_length/2 + self.feedline_cutout, -self.a/2 - self.b),
+                pya.DPoint(self.feedline_length/2 + self.feedline_cutout, self.a/2 + self.b),
+                pya.DPoint(self.feedline_length/2, self.a/2 + self.b),
+            ]  
+            cutout_l_region = pya.Region(pya.DPolygon(cutout_l_pts).to_itype(self.layout.dbu))
+            cutout_r_region = pya.Region(pya.DPolygon(cutout_r_pts).to_itype(self.layout.dbu))
+            cutout_region = cutout_l_region + cutout_r_region
+        else:
+            cutout_region = pya.Region()
+
+        return top_region + bottom_region + cutout_region
     
     def _make_spikes_shape(self):
 
@@ -413,17 +435,34 @@ class ResonatorSpike(Element):
         return t_cut_region
     
     def _make_junction(self):
-        junction_offset = self.total_junction_height/2
-        junction_centerx = self.l_coupling_length/2 - self.end_box_width - self.spike_region_width/2
-        junction_centery = self.end_box_top + self.l_junction_width/2
+        total_junction_height = 2*self.junction_pad_height + 2*self.junction_finger_length + 2*self.junction_finger_tip_length - self.junction_overshoot + self.angle_evap_offset
+
+
+        junction_rightx = self.end_box_left + self.junction_pad_height + self.angle_evap_offset
+        junction_leftx = junction_rightx - total_junction_height
+        junction_centery = self.end_box_top + self.l_junction_width/2 + self.l_junction_spacing
+        res_centerx = self.end_box_far_left - self.l_grounding_distance
+
+        pts_inductor_extension = [
+            pya.DPoint(junction_leftx + self.junction_pad_height, junction_centery + self.l_junction_width/2),
+            pya.DPoint(res_centerx - self.l_width/2, junction_centery + self.l_junction_width/2),
+            pya.DPoint(res_centerx - self.l_width/2, self.ground_gap_bottom - 2*self.a),
+            pya.DPoint(res_centerx + self.l_width/2, self.ground_gap_bottom - 2*self.a),
+            pya.DPoint(res_centerx + self.l_width/2, junction_centery - self.l_junction_width/2),
+            pya.DPoint(junction_leftx + self.junction_pad_height, junction_centery - self.l_junction_width/2),
+        ]
+        ind_extension_region = pya.Region(pya.DPolygon(pts_inductor_extension).to_itype(self.layout.dbu))
+
 
         self.insert_cell(
-            RKRHook, pya.DTrans(3, False, junction_centerx - junction_offset, junction_centery), f"JQ_",
-            pad_width=self.l_junction_width*0.75, #pad_height=self.pad_height, base_length=self.base_length,
-            #finger_length=self.finger_length, finger_tip_length=self.finger_tip_length, finger_width=self.finger_width,
+            RKRHook, pya.DTrans(3, False, junction_leftx, junction_centery), f"JQ_",
+            pad_width=self.l_junction_width*0.75, pad_height=self.junction_pad_height, #base_length=self.base_length,
+            finger_length=self.junction_finger_length, finger_tip_length=self.junction_finger_tip_length, # finger_width=self.junction_finger_width,
             #finger_taper_base_width=self.finger_taper_base_width, junction_length=self.junction_length,
             shadow_angle=self.shadow_angle_1, resist_thickness=self.resist_thickness
         )
+
+        return ind_extension_region
 
     def _make_spike_meshing_region(self):
         buffer = 0.1*self.spike_region_width

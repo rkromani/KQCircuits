@@ -58,7 +58,7 @@ for i, jsonfile in enumerate(json_files):
         oDesktop.RunScript(os.path.join(scriptpath, "create_capacitive_pi_model.py"))
 
     # Create reports
-    oDesktop.RunScript(os.path.join(scriptpath, "create_reports.py"))
+    oDesktop.RunScriptWithArguments(os.path.join(scriptpath, "create_reports.py"), jsonfile)
     oDesktop.TileWindows(0)
 
     # Save project
@@ -78,7 +78,7 @@ for i, jsonfile in enumerate(json_files):
     oProject.Save()
 
     # Export results
-    oDesktop.RunScript(os.path.join(scriptpath, "export_solution_data.py"))
+    oDesktop.RunScriptWithArguments(os.path.join(scriptpath, "export_solution_data.py"), jsonfile)
 
     #######################
     # Optional processing #
