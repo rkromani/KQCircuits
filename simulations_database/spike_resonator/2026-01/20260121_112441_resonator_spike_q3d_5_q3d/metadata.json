@@ -1,0 +1,152 @@
+{
+  "timestamp": "2026-01-21T11:24:41.201866",
+  "design": "spike_resonator",
+  "simulation_name": "resonator_spike_q3d_5",
+  "ansys_tool": "q3d",
+  "parameters": {
+    "box": "(0,-700;1000,3000)",
+    "ground_grid_box": "(0,0;10000,10000)",
+    "with_grid": false,
+    "name": "resonator_spike_q3d_5",
+    "use_ports": true,
+    "use_internal_ports": true,
+    "port_size": 400.0,
+    "upper_box_height": 1000.0,
+    "lower_box_height": 0,
+    "fixed_level_stackup": true,
+    "face_stack": [
+      "1t1"
+    ],
+    "substrate_height": [
+      550.0,
+      375.0
+    ],
+    "substrate_box": [
+      null
+    ],
+    "substrate_material": [
+      "silicon"
+    ],
+    "material_dict": "{'silicon': {'permittivity': 11.45}}",
+    "chip_distance": [
+      8.0
+    ],
+    "airbridge_height": 3.4,
+    "metal_height": [
+      0.0
+    ],
+    "metal_material": [
+      "pec"
+    ],
+    "dielectric_height": [
+      0.0
+    ],
+    "dielectric_material": [
+      "silicon"
+    ],
+    "waveguide_length": 100,
+    "over_etching": 0,
+    "vertical_over_etching": 0,
+    "hollow_tsv": 0,
+    "partition_regions": [],
+    "tls_layer_thickness": [
+      0.0
+    ],
+    "tls_layer_material": [
+      "vacuum",
+      "silicon",
+      "silicon"
+    ],
+    "tls_sheet_approximation": false,
+    "detach_tls_sheets_from_body": true,
+    "minimum_point_spacing": 0.01,
+    "polygon_tolerance": 0.004,
+    "small_shape_area": 1.0,
+    "base_metal_addition_layers": [
+      "base_metal_addition"
+    ],
+    "extra_json_data": null,
+    "junction_total_length": 33,
+    "junction_upper_pad_width": 8,
+    "junction_upper_pad_length": 13,
+    "junction_lower_pad_width": 8,
+    "junction_lower_pad_length": 12,
+    "include_background_gap": true,
+    "a": 10,
+    "b": 6,
+    "n": 64,
+    "r": 100,
+    "margin": 5,
+    "face_ids": [
+      "1t1",
+      "2b1",
+      "1b1",
+      "2t1"
+    ],
+    "display_name": "",
+    "protect_opposite_face": false,
+    "opposing_face_id_groups": [
+      [
+        "1t1",
+        "2b1"
+      ]
+    ],
+    "etch_opposite_face": false,
+    "etch_opposite_face_margin": 5,
+    "_epr_show": false,
+    "_epr_cross_section_cut_layer": null,
+    "_epr_cross_section_cut_width": 0.0,
+    "junction_inductance": 1.1497e-08,
+    "junction_capacitance": 1e-16,
+    "feedline_length": 700,
+    "feedline_spacing": 10,
+    "l_width": 3,
+    "l_coupling_length": 250,
+    "l_coupling_distance": 16,
+    "l_height": 1600,
+    "l_radius": 25,
+    "l_ground_gap": 120,
+    "l_grounding_distance": 20,
+    "l_junction_width": 15,
+    "end_box_width": 20,
+    "end_box_height": 1000,
+    "end_box_spacing": 20,
+    "t_cut_body_width": 3,
+    "t_cut_distance_from_edge": 3,
+    "t_cut_t_width": 6,
+    "t_cut_t_height": 3,
+    "t_cut_radius": 2,
+    "t_cut_number": 0,
+    "spike_height": 2,
+    "spike_gap": 0.5,
+    "spike_base_width": 2,
+    "spike_base_height": 10,
+    "spike_number": 5,
+    "junction_bool": false,
+    "include_inductor": false,
+    "enable_mesh_layers": true,
+    "total_junction_height": 20,
+    "shadow_angle_1": 0,
+    "shadow_angle_2": 0,
+    "resist_thickness": 3,
+    "add_metal": false
+  },
+  "export_parameters": {
+    "path": "C:\\Roger\\KQCircuits\\tmp\\spike_res_q3d_sim_output",
+    "ansys_tool": "q3d",
+    "exit_after_run": false,
+    "percent_error": 0.3,
+    "minimum_converged_passes": 2,
+    "maximum_passes": 20,
+    "use_floating_islands": true,
+    "mesh_size": {
+      "1t1_mesh_1": 0.25,
+      "1t1_mesh_3": 3
+    }
+  },
+  "status": "pending",
+  "files": {
+    "geometry": "resonator_spike_q3d_5.gds",
+    "simulation_json": "resonator_spike_q3d_5_q3d.json"
+  }
+}
