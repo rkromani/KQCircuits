@@ -165,10 +165,14 @@ def export_ansys_bat(
         # Use virtual environment Python if it exists, otherwise system Python
         venv_python = repo_root / 'env-kqcircuits-py312' / 'Scripts' / 'python.exe'
         python_cmd = str(venv_python) if venv_python.exists() else 'python'
+
         if finalize_script.exists():
             file.write(f'"{python_cmd}" "{finalize_script}" "{path}"\n')
             file.write('echo Done! Results saved to simulations_database\n')
-        file.write('pause\n')
+        else:
+            file.write(f'REM WARNING: finalize_results.py not found at {finalize_script}\n')
+            file.write(f'echo WARNING: Could not find finalize_results.py - results will not be saved to database\n')
+        file.write('timeout /t 30\n')
 
     # Make the bat file executable in linux
     os.chmod(bat_filename, os.stat(bat_filename).st_mode | stat.S_IEXEC)

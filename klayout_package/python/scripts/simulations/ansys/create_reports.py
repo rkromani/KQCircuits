@@ -164,12 +164,33 @@ elif design_type == "Q3D Extractor":
     # is_acrl is read from JSON configuration above
     if is_acrl:
         # ACRL mode: Create inductance convergence plot
-        # Query available inductance quantities from ANSYS to get correct naming
+        # Q3D ACRL uses special naming: ACL(Net1:Source_Net1,Net2:Source_Net2)
         each_pass = setup + " : AdaptivePass"
         context = ["Context:=", "Original"]
         try:
-            output_l = get_quantities(oReportSetup, "Matrix", each_pass, context, "L Matrix")
-            if output_l:
+            # Build expected inductance variable names using ACRL naming convention
+            acl_elements = ["ACL({}:Source_{},{}:Source_{})".format(net_i, net_i, net_j, net_j)
+                           for i, net_i in enumerate(signal_nets) for net_j in signal_nets[i:]]
+
+            # Try to get available quantities to filter valid ones
+            # Try multiple category names as ANSYS naming is inconsistent
+            available_quantities = []
+            for category in ["ACL Matrix", "L Matrix", ""]:
+                try:
+                    quantities = get_quantities(oReportSetup, "Matrix", each_pass, context, category)
+                    if quantities:
+                        available_quantities = quantities
+                        break
+                except:
+                    pass
+
+            # Filter to only include available ACL elements, or use all if query failed
+            if available_quantities:
+                plot_elements = [e for e in acl_elements if e in available_quantities]
+            else:
+                plot_elements = acl_elements  # Try all and let ANSYS handle missing ones
+
+            if plot_elements:
                 create_x_vs_y_plot(
                     oReportSetup,
                     "Inductance Convergence",
@@ -179,7 +200,7 @@ elif design_type == "Q3D Extractor":
                     ["Pass:=", ["All"], "Freq:=", ["All"]],
                     "Pass",
                     "L [H]",
-                    output_l,
+                    plot_elements,
                 )
                 oDesktop.AddMessage("", "", 0, "Created inductance convergence plot for ACRL simulation")
             else:
@@ -192,13 +213,13 @@ elif design_type == "Q3D Extractor":
         try:
             create_x_vs_y_plot(
                 oReportSetup,
-                "Solution Convergence",
+                "Capacitance Convergence",
                 "Matrix",
                 setup + " : AdaptivePass",
                 ["Context:=", "Original"],
                 ["Pass:=", ["All"], "Freq:=", ["All"]],
                 "Pass",
-                "C",
+                "C [F]",
                 unique_elements_c,
             )
             oDesktop.AddMessage("", "", 0, "Created capacitance convergence plot")
