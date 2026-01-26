@@ -1,0 +1,57 @@
+{
+  "queue_name": "finger_cap_parameter_study",
+  "created_at": "2026-01-26T12:48:50.227840",
+  "error_handling": "continue",
+  "runs": [
+    {
+      "script": "klayout_package/python/scripts/simulations/finger_cap_q3d_sim.py",
+      "description": "Sweep finger width (1-5 \u00b5m)",
+      "args": [
+        "--no-gui"
+      ],
+      "sweep_overrides": {
+        "finger_width": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "enabled": true,
+      "status": "pending",
+      "output_folder": null,
+      "bat_file": null,
+      "start_time": null,
+      "end_time": null,
+      "duration_seconds": null,
+      "error_message": null,
+      "exit_code": null
+    },
+    {
+      "script": "klayout_package/python/scripts/simulations/finger_cap_q3d_sim.py",
+      "description": "Sweep gap width",
+      "args": [
+        "--no-gui"
+      ],
+      "sweep_overrides": {
+        "gap_width": [
+          1,
+          2,
+          3,
+          5,
+          10
+        ]
+      },
+      "enabled": true,
+      "status": "pending",
+      "output_folder": null,
+      "bat_file": null,
+      "start_time": null,
+      "end_time": null,
+      "duration_seconds": null,
+      "error_message": null,
+      "exit_code": null
+    }
+  ]
+}
