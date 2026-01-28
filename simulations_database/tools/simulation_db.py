@@ -198,9 +198,15 @@ class SimulationDB:
                 try:
                     with open(results_json, 'r') as f:
                         results = json.load(f)
-                    metadata['results_summary'] = self._extract_results_summary(results)
-                except:
-                    pass
+
+                    # Get net names from simulation parameters
+                    # Handle case where extra_json_data is None
+                    extra_json = metadata.get('parameters', {}).get('extra_json_data') or {}
+                    net_names = extra_json.get('net_names', {})
+
+                    metadata['results_summary'] = self._extract_results_summary(results, net_names)
+                except Exception as e:
+                    print(f"Warning: Could not extract results summary for {sim_name}: {e}")
 
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
@@ -421,9 +427,43 @@ class SimulationDB:
 
         return metadata
 
-    def _extract_results_summary(self, results):
-        """Extract key metrics from results JSON for quick reference."""
+    def _extract_results_summary(self, results, net_names=None):
+        """Extract key metrics from results JSON for quick reference.
+
+        Args:
+            results: Results JSON from ANSYS containing matrices
+            net_names: Optional dict mapping port numbers to net names (e.g., {1: "feedline", 2: "inductor"})
+
+        Uses descriptive net names if available, otherwise falls back to numbered indices.
+        """
         summary = {}
+
+        # Convert string keys to int keys if needed
+        if net_names and isinstance(net_names, dict):
+            net_names = {int(k) if isinstance(k, str) and k.isdigit() else k: v
+                        for k, v in net_names.items()}
+        else:
+            net_names = {}
+
+        # Helper function to create matrix element key
+        def get_matrix_key(matrix_type, i, j, net_names):
+            """Generate matrix element key with descriptive net names if available."""
+            port_i = i + 1  # Convert to 1-based
+            port_j = j + 1
+
+            if net_names and port_i in net_names and port_j in net_names:
+                name_i = net_names[port_i]
+                name_j = net_names[port_j]
+
+                if i == j:
+                    # Self-inductance/capacitance
+                    return f'{matrix_type}_{name_i}'
+                else:
+                    # Mutual inductance/capacitance
+                    return f'{matrix_type}_{name_i}_{name_j}'
+            else:
+                # Fall back to numbered labels
+                return f'{matrix_type}_{port_i}{port_j}'
 
         # Capacitance matrix elements
         if 'CMatrix' in results:
@@ -432,7 +472,8 @@ class SimulationDB:
                 for i, row in enumerate(cmatrix):
                     if isinstance(row, list):
                         for j, val in enumerate(row):
-                            summary[f'capacitance_{i+1}{j+1}'] = val
+                            key = get_matrix_key('C', i, j, net_names)
+                            summary[key] = val
 
         # Inductance matrix elements
         if 'LMatrix' in results:
@@ -441,7 +482,18 @@ class SimulationDB:
                 for i, row in enumerate(lmatrix):
                     if isinstance(row, list):
                         for j, val in enumerate(row):
-                            summary[f'inductance_{i+1}{j+1}'] = val
+                            key = get_matrix_key('L', i, j, net_names)
+                            summary[key] = val
+
+        # Resistance matrix elements
+        if 'RMatrix' in results:
+            rmatrix = results['RMatrix']
+            if isinstance(rmatrix, list) and len(rmatrix) > 0:
+                for i, row in enumerate(rmatrix):
+                    if isinstance(row, list):
+                        for j, val in enumerate(row):
+                            key = get_matrix_key('R', i, j, net_names)
+                            summary[key] = val
 
         # Other common metrics
         if 'convergence_passes' in results:

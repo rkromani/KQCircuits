@@ -33,6 +33,37 @@ def _get_excitations(json_data):
     return {l["excitation"] for l in json_data["layers"].values() if l.get("excitation", 0) > 0}
 
 
+def _get_matrix_label(matrix_type, i, j, net_names):
+    """Generate matrix element label with descriptive net names.
+
+    Args:
+        matrix_type: "C", "L", or "R"
+        i, j: Matrix indices (0-based)
+        net_names: Dictionary mapping port numbers (1-based) to net names
+
+    Returns:
+        String label like "L_feedline" (self) or "L_feedline_inductor" (mutual)
+    """
+    # Convert to 1-based port numbers
+    port_i = i + 1
+    port_j = j + 1
+
+    # Use net names if available, otherwise fall back to numbers
+    if net_names and port_i in net_names and port_j in net_names:
+        name_i = net_names[port_i]
+        name_j = net_names[port_j]
+
+        if i == j:
+            # Self-inductance/capacitance/resistance
+            return f"{matrix_type}_{name_i}"
+        else:
+            # Mutual inductance/capacitance/resistance
+            return f"{matrix_type}_{name_i}_{name_j}"
+    else:
+        # Fall back to numbered labels
+        return f"{matrix_type}{port_i}{port_j}"
+
+
 # Find data files
 path = os.path.curdir
 result_files = [f for f in os.listdir(path) if f.endswith("_project_results.json")]
@@ -40,6 +71,15 @@ if result_files:
     # Find parameters that are swept
     definition_files = [f.replace("_project_results.json", ".json") for f in result_files]
     parameters, parameter_values = find_varied_parameters(definition_files)
+
+    # Load net name mappings from definition files
+    net_names_map = {}
+    for key, def_file in zip(parameter_values.keys(), definition_files):
+        def_data = load_json(def_file)
+        net_names = def_data.get("parameters", {}).get("extra_json_data", {}).get("net_names", {})
+        if net_names:
+            # Convert string keys to int keys and store
+            net_names_map[key] = {int(k): v for k, v in net_names.items()}
 
     # Load result data
     cmatrix = {}
@@ -68,23 +108,35 @@ if result_files:
             except (TypeError, AttributeError):
                 return False
 
+        # Get net names for this simulation (if available)
+        net_names = net_names_map.get(key, {})
+
         # Extract capacitance matrix (if present and valid - not available in ACRL mode)
         cdata = result.get("CMatrix") or result.get("Cs")
         if is_valid_matrix(cdata):
             has_capacitance = True
-            cmatrix[key] = {f"C{i+1}{j+1}": c for i, l in enumerate(cdata) for j, c in enumerate(l)}
+            cmatrix[key] = {
+                _get_matrix_label("C", i, j, net_names): c
+                for i, l in enumerate(cdata) for j, c in enumerate(l)
+            }
 
         # Extract inductance matrix if ACRL was enabled
         ldata = result.get("LMatrix") or result.get("Ls")
         if is_valid_matrix(ldata):
             has_inductance = True
-            lmatrix[key] = {f"L{i+1}{j+1}": l for i, l_row in enumerate(ldata) for j, l in enumerate(l_row)}
+            lmatrix[key] = {
+                _get_matrix_label("L", i, j, net_names): l
+                for i, l_row in enumerate(ldata) for j, l in enumerate(l_row)
+            }
 
         # Extract resistance matrix if ACRL was enabled
         rdata = result.get("RMatrix") or result.get("Rs")
         if is_valid_matrix(rdata):
             has_resistance = True
-            rmatrix[key] = {f"R{i+1}{j+1}": r for i, r_row in enumerate(rdata) for j, r in enumerate(r_row)}
+            rmatrix[key] = {
+                _get_matrix_label("R", i, j, net_names): r
+                for i, r_row in enumerate(rdata) for j, r in enumerate(r_row)
+            }
 
     # Deembedding (currently only for capacitance)
     # Skip deembedding if no capacitance data available (e.g., ACRL mode)

@@ -107,6 +107,7 @@ for name, params in material_dict.items():
 # Import GDSII geometry
 layers = data.get("layers", {})
 refine_layers = [n for n in layers if any(match_layer(n, p) for p in mesh_size)]
+lumped_rlc_layers = [n for n in layers if "lumped_rlc" in n]  # Lumped RLC element layers
 layers = {n: d for n, d in layers.items() if not n.endswith("_gap") or n in refine_layers}  # ignore unused gap layers
 metal_layers = {n: d for n, d in layers.items() if "excitation" in d}
 
@@ -183,8 +184,9 @@ for lname, ldata in layers.items():
         set_material(oEditor, objects[lname], material, solve_inside)
     elif lname in metal_layers:  # is metal
         metal_sheets += objects[lname]
-    elif lname not in refine_layers:
+    elif lname not in refine_layers and lname not in lumped_rlc_layers:
         set_material(oEditor, objects[lname], None, None)  # set sheet as non-model
+    # Note: refine_layers (mesh) and lumped_rlc_layers remain as model objects with no material (unassigned)
 
     set_color(oEditor, objects[lname], *color_by_material(material, material_dict, thickness == 0.0))
 
@@ -224,15 +226,37 @@ if ansys_tool in hfss_tools:
     ports = sorted(data["ports"], key=lambda k: k["number"])
     for port in ports:
         is_wave_port = port["type"] == "EdgePort"
+
+        # Check if this is a lumped element (doesn't need polygon)
+        is_lumped = port.get("junction", False) or port.get("lumped_element", False)
+
         if not is_wave_port or not ansys_project_template:
-            if "polygon" not in port:
-                continue
+            # Lumped elements don't need polygon geometry - they use imported layer objects
+            if not is_lumped:
+                if "polygon" not in port:
+                    continue
 
-            polyname = "Port%d" % port["number"]
+                polyname = "Port%d" % port["number"]
 
-            # Create polygon spanning the two edges
-            create_polygon(oEditor, polyname, [list(p) for p in port["polygon"]], units)
-            set_color(oEditor, [polyname], 240, 180, 180, 0.8)
+                # Create polygon spanning the two edges
+                create_polygon(oEditor, polyname, [list(p) for p in port["polygon"]], units)
+                set_color(oEditor, [polyname], 240, 180, 180, 0.8)
+            else:
+                # For lumped elements, use objects from lumped_rlc layer instead of creating polygon
+                # Find the lumped_rlc layer objects to use as boundary geometry
+                lumped_layer_name = None
+                for lname in layers:
+                    if "lumped_rlc" in lname:
+                        lumped_layer_name = lname
+                        break
+
+                if lumped_layer_name and lumped_layer_name in objects:
+                    # Use the first object from lumped_rlc layer
+                    polyname = objects[lumped_layer_name][0]
+                else:
+                    # Fallback: skip this port if no lumped_rlc layer found
+                    oDesktop.AddMessage("", "", 2, "Warning: No lumped_rlc layer found for port %d" % port["number"])
+                    continue
 
             if ansys_tool == "hfss":
                 ground_objects = [o for n, d in metal_layers.items() if d["excitation"] == 0 for o in objects[n]]
@@ -297,85 +321,153 @@ if ansys_tool in hfss_tools:
                     ]
                 )
 
-            elif port["junction"] and ansys_tool == "eigenmode":
-                # add junction inductance variable
-                oDesign.ChangeProperty(
-                    [
-                        "NAME:AllTabs",
+            elif (port.get("junction", False) or port.get("lumped_element", False)):
+                # Create lumped RLC element for junctions or general lumped elements
+                # Determine variable prefix based on element type
+                if port.get("junction", False):
+                    var_prefix = "Lj"  # Junction inductance (for EPR compatibility)
+                    element_name = "jj"
+                else:
+                    var_prefix = "L"   # General lumped element
+                    element_name = "elem"
+
+                # Create ANSYS variables for inductance if specified
+                if port.get("inductance", 0) != 0:
+                    oDesign.ChangeProperty(
                         [
-                            "NAME:LocalVariableTab",
-                            ["NAME:PropServers", "LocalVariables"],
+                            "NAME:AllTabs",
                             [
-                                "NAME:NewProps",
+                                "NAME:LocalVariableTab",
+                                ["NAME:PropServers", "LocalVariables"],
                                 [
-                                    "NAME:Lj_%d" % port["number"],
-                                    "PropType:=",
-                                    "VariableProp",
-                                    "UserDef:=",
-                                    True,
-                                    "Value:=",
-                                    "%.32eH" % port["inductance"],
-                                ],  # use best float precision
-                            ],
-                        ],
-                    ]
-                )
-                # add junction capacitance variable
-                oDesign.ChangeProperty(
-                    [
-                        "NAME:AllTabs",
-                        [
-                            "NAME:LocalVariableTab",
-                            ["NAME:PropServers", "LocalVariables"],
-                            [
-                                "NAME:NewProps",
-                                [
-                                    "NAME:Cj_%d" % port["number"],
-                                    "PropType:=",
-                                    "VariableProp",
-                                    "UserDef:=",
-                                    True,
-                                    "Value:=",
-                                    "%.32efarad" % port["capacitance"],
+                                    "NAME:NewProps",
+                                    [
+                                        "NAME:%s_%d" % (var_prefix, port["number"]),
+                                        "PropType:=",
+                                        "VariableProp",
+                                        "UserDef:=",
+                                        True,
+                                        "Value:=",
+                                        "%.32eH" % port["inductance"],
+                                    ],
                                 ],
                             ],
-                        ],
-                    ]
-                )
+                        ]
+                    )
 
-                # Turn junctions to lumped RLC
+                # Create ANSYS variable for capacitance if specified
+                if port.get("capacitance", 0) != 0:
+                    cap_var_name = "Cj_%d" if port.get("junction", False) else "C_%d"
+                    oDesign.ChangeProperty(
+                        [
+                            "NAME:AllTabs",
+                            [
+                                "NAME:LocalVariableTab",
+                                ["NAME:PropServers", "LocalVariables"],
+                                [
+                                    "NAME:NewProps",
+                                    [
+                                        "NAME:" + (cap_var_name % port["number"]),
+                                        "PropType:=",
+                                        "VariableProp",
+                                        "UserDef:=",
+                                        True,
+                                        "Value:=",
+                                        "%.32efarad" % port["capacitance"],
+                                    ],
+                                ],
+                            ],
+                        ]
+                    )
+
+                # Create ANSYS variable for resistance if non-default
+                if port.get("resistance", 50) != 50:
+                    oDesign.ChangeProperty(
+                        [
+                            "NAME:AllTabs",
+                            [
+                                "NAME:LocalVariableTab",
+                                ["NAME:PropServers", "LocalVariables"],
+                                [
+                                    "NAME:NewProps",
+                                    [
+                                        "NAME:R_%d" % port["number"],
+                                        "PropType:=",
+                                        "VariableProp",
+                                        "UserDef:=",
+                                        True,
+                                        "Value:=",
+                                        "%.32eohm" % port["resistance"],
+                                    ],
+                                ],
+                            ],
+                        ]
+                    )
+
+                # Create lumped RLC boundary condition
                 current_start = ["%.32e%s" % (p, units) for p in port["signal_location"]]
                 current_end = ["%.32e%s" % (p, units) for p in port["ground_location"]]
-                oBoundarySetup.AssignLumpedRLC(
+
+                # Get RLC configuration type (parallel or series)
+                rlc_config = port.get("rlc_type", "parallel").capitalize()
+
+                # Build RLC parameters
+                rlc_params = [
+                    "NAME:LumpRLC_%s_%d" % (element_name, port["number"]),
+                    "Objects:=",
+                    [polyname],
                     [
-                        "NAME:LumpRLC_jj_%d" % port["number"],
-                        "Objects:=",
-                        [polyname],
-                        [
-                            "NAME:CurrentLine",  # set direction of current across junction
-                            "Coordinate System:=",
-                            "Global",
-                            "Start:=",
-                            current_start,
-                            "End:=",
-                            current_end,
-                        ],
-                        "RLC Type:=",
-                        "Parallel",
-                        "UseResist:=",
-                        False,
+                        "NAME:CurrentLine",
+                        "Coordinate System:=",
+                        "Global",
+                        "Start:=",
+                        current_start,
+                        "End:=",
+                        current_end,
+                    ],
+                    "RLC Type:=",
+                    rlc_config,
+                ]
+
+                # Add inductance if specified
+                if port.get("inductance", 0) != 0:
+                    rlc_params.extend([
                         "UseInduct:=",
                         True,
                         "Inductance:=",
-                        "Lj_%d" % port["number"],
+                        "%s_%d" % (var_prefix, port["number"]),
+                    ])
+                else:
+                    rlc_params.extend(["UseInduct:=", False])
+
+                # Add capacitance if specified
+                if port.get("capacitance", 0) != 0:
+                    cap_var_name = "Cj_%d" if port.get("junction", False) else "C_%d"
+                    rlc_params.extend([
                         "UseCap:=",
                         True,
                         "Capacitance:=",
-                        "Cj_%d" % port["number"],
-                        "Faces:=",
-                        [int(oEditor.GetFaceIDs(polyname)[0])],
-                    ]
-                )
+                        cap_var_name % port["number"],
+                    ])
+                else:
+                    rlc_params.extend(["UseCap:=", False])
+
+                # Add resistance if specified
+                if port.get("resistance", 50) != 50:
+                    rlc_params.extend([
+                        "UseResist:=",
+                        True,
+                        "Resistance:=",
+                        "R_%d" % port["number"],
+                    ])
+                else:
+                    rlc_params.extend(["UseResist:=", False])
+
+                # Add face for boundary assignment
+                rlc_params.extend(["Faces:=", [int(oEditor.GetFaceIDs(polyname)[0])]])
+
+                # Assign the lumped RLC
+                oBoundarySetup.AssignLumpedRLC(rlc_params)
 
                 if "pyepr" in simulation_flags:
                     # add polyline across junction for voltage across the junction

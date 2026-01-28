@@ -92,6 +92,10 @@ _common_b_t_layers = {
     "mesh_3": (29, 1),  # Mesh refinement region 3
     "mesh_4": (31, 1),  # Mesh refinement region 4
     "mesh_5": (32, 1),  # Mesh refinement region 5
+    # Lumped RLC element geometry layer
+    # Defines geometry for lumped RLC boundary attachment in ANSYS
+    # Exported as non-model surface (material=None) for boundary assignments
+    "lumped_rlc": (33, 1),  # Lumped RLC element attachment geometry
 }
 
 

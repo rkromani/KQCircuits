@@ -37,6 +37,8 @@ class Port:
         capacitance: float = 0,
         face: int = 0,
         junction: bool = False,
+        lumped_element: bool = False,
+        rlc_type: str = "parallel",
         renormalization: float = 50,
     ):
         """
@@ -48,6 +50,10 @@ class Port:
             capacitance: Capacitance of the element. Given in Farads (:math:`\\text{F}`).
             face: Integer-valued face index for the port.
             junction: Whether this port models a SQUID/Junction. Used in EPR calculations.
+            lumped_element: Whether this port represents a general lumped RLC element (capacitor, inductor, resistor).
+                When True, ANSYS will replace the port location with an ideal RLC component instead of meshing geometry.
+                This is distinct from 'junction' which is specifically for SQUIDs/junctions in EPR calculations.
+            rlc_type: Configuration of lumped RLC ("parallel" or "series").
             renormalization: Port renormalization in Ohms or None to not re-normalize the port.
         """
         self.number = number
@@ -57,6 +63,8 @@ class Port:
         self.capacitance = capacitance
         self.face = face
         self.junction = junction
+        self.lumped_element = lumped_element
+        self.rlc_type = rlc_type
         self.renormalization = renormalization
         self.type = type(self).__name__
 
@@ -79,6 +87,8 @@ class InternalPort(Port):
         capacitance: float = 0,
         face: int = 0,
         junction: bool = False,
+        lumped_element: bool = False,
+        rlc_type: str = "parallel",
         etch_width: float = None,
         floating: bool = False,
     ):
@@ -93,11 +103,13 @@ class InternalPort(Port):
             capacitance: Capacitance of the element. Given in Farads (:math:`\\text{F}`).
             face: Integer-valued face index for the port.
             junction: Whether this port models a SQUID/Junction. Used in EPR calculations.
+            lumped_element: Whether this port represents a general lumped RLC element.
+            rlc_type: Configuration of lumped RLC ("parallel" or "series").
             etch_width: Width of a trace between signal_location and ground_location, on which the metal is etched away.
                 Useful when adding a lumped port on a waveguide.
             floating: activate floating port -> does not force "ground side" to ground.
         """
-        super().__init__(number, resistance, reactance, inductance, capacitance, face, junction)
+        super().__init__(number, resistance, reactance, inductance, capacitance, face, junction, lumped_element, rlc_type)
         self.signal_location = signal_location
         if ground_location is not None:
             self.ground_location = ground_location
@@ -131,6 +143,8 @@ class EdgePort(Port):
         deembed_len: float = None,
         face: int = 0,
         junction: bool = False,
+        lumped_element: bool = False,
+        rlc_type: str = "parallel",
         size=None,
         deembed_cross_section: str = None,
     ):
@@ -145,11 +159,13 @@ class EdgePort(Port):
             deembed_len: Port de-embedding length. Given in simulation units, usually microns (:math:`\\text{um}`).
             face: Integer-valued face index for the port.
             junction: Whether this port models a SQUID/Junction. Used in EPR calculations.
+            lumped_element: Whether this port represents a general lumped RLC element.
+            rlc_type: Configuration of lumped RLC ("parallel" or "series").
             size: Width and height of the port to override Simulation.port_size. Optionally, the size can be set as a
                 list specifying the extensions from the center of the port to left, right, down and up, respectively.
             deembed_cross_section: name of the port described by a cross-section
         """
-        super().__init__(number, resistance, reactance, inductance, capacitance, face, junction)
+        super().__init__(number, resistance, reactance, inductance, capacitance, face, junction, lumped_element, rlc_type)
         self.signal_location = signal_location
         self.deembed_len = deembed_len
         self.size = size

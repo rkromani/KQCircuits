@@ -22,6 +22,7 @@ from kqcircuits.pya_resolver import pya
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.junctions.rkr_hook_junction import RKRHook
+from kqcircuits.util.refpoints import RefpointToInternalPort
 
 import numpy as np
 
@@ -37,7 +38,7 @@ class ResonatorSpike(Element):
     l_width = Param(pdt.TypeDouble, "Inductor width", 3, unit="μm")
     l_coupling_length = Param(pdt.TypeDouble, "Inductor coupling length", 250, unit="μm")
     l_coupling_distance = Param(pdt.TypeDouble, "Inductor coupling distance", 16, unit="μm")
-    l_height = Param(pdt.TypeDouble, "Inductor height", 500, unit="μm")
+    l_height = Param(pdt.TypeDouble, "Inductor height", 2000, unit="μm")
     l_radius = Param(pdt.TypeDouble, "Inductor turn radius", 25, unit="μm")
     l_ground_gap = Param(pdt.TypeDouble, "Inductor ground gap", 120, unit="μm")
     l_grounding_distance = Param(pdt.TypeDouble, "Inductor grounding distance from side of capacitor", 20, unit="μm")
@@ -45,7 +46,7 @@ class ResonatorSpike(Element):
     l_junction_spacing = Param(pdt.TypeDouble, "Spacing between top of capacitor ground and junction", 15, unit="μm")
 
     end_box_width = Param(pdt.TypeDouble, "End box width", 20, unit="μm")
-    end_box_height = Param(pdt.TypeDouble, "End box height", 50, unit="μm")
+    end_box_height = Param(pdt.TypeDouble, "End box height", 850, unit="μm")
     end_box_spacing = Param(pdt.TypeDouble, "End box spacing from bottom of ground gap box", 20, unit="μm")
 
     t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 3, unit="μm")
@@ -55,11 +56,11 @@ class ResonatorSpike(Element):
     t_cut_radius = Param(pdt.TypeDouble, "Radius of T-cut corners", 2, unit="μm")
     t_cut_number = Param(pdt.TypeInt, "Number of T-cuts", 1)
     
-    spike_height = Param(pdt.TypeDouble, "Spike height", 1.5, unit="μm")
+    spike_height = Param(pdt.TypeDouble, "Spike height", 2, unit="μm")
     spike_gap = Param(pdt.TypeDouble, "Spike gap", 0.1, unit="μm")
-    spike_base_width = Param(pdt.TypeDouble, "Spike base width", 1, unit="μm")
+    spike_base_width = Param(pdt.TypeDouble, "Spike base width", 2, unit="μm")
     spike_base_height = Param(pdt.TypeDouble, "Spike base height", 10, unit="μm")
-    spike_number = Param(pdt.TypeInt, "Number of spikes", 8)
+    spike_number = Param(pdt.TypeInt, "Number of spikes", 0)
 
     junction_bool = Param(pdt.TypeBoolean, "Whether to add junction", True)
     #total_junction_height = Param(pdt.TypeDouble, "Total junction height", 20, unit="μm", readonly=True)
@@ -67,6 +68,11 @@ class ResonatorSpike(Element):
     junction_finger_length = Param(pdt.TypeDouble, "Length of junction finger", 5, unit="μm")
     junction_finger_tip_length = Param(pdt.TypeDouble, "Length of junction finger tip", 1, unit="μm")
     junction_overshoot = Param(pdt.TypeDouble, "Amount the junction hook extends beyond the finger width and finger beyond hook", 0.5, unit="μm")
+
+    # Lumped model parameters for junction
+    junction_use_lumped = Param(pdt.TypeBoolean, "Use lumped RLC model for junction instead of physical geometry", False)
+    junction_lumped_inductance = Param(pdt.TypeDouble, "Junction inductance for lumped model (nH)", 11.5, unit="nH")
+    junction_lumped_capacitance = Param(pdt.TypeDouble, "Junction capacitance for lumped model (fF)", 0.1, unit="fF")
     
 
     include_inductor = Param(pdt.TypeBoolean, "Include inductor (disable for Q3D capacitance measurements)", True)
@@ -83,10 +89,12 @@ class ResonatorSpike(Element):
     def build(self):
 
         self.angle_evap_offset = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_1)) - np.sin(np.radians(self.shadow_angle_2)))
+        self.angle_evap_offset_l = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_2)))
+        self.angle_evap_offset_r = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_1)))
         #self.end_box_height = self.spike_base_width*self.spike_number + 2 * self.end_box_buffer
         #distance between end of end box and spikes
         self.end_box_buffer = (self.end_box_height - self.spike_base_width*self.spike_number)/2
-        self.spike_region_width = self.spike_height * 2 + self.spike_gap + self.angle_evap_offset
+        self.spike_region_width = self.spike_height * 2 + self.spike_gap #+ self.angle_evap_offset
         self.spike_region_length = self.spike_number * self.spike_base_width
 
         self.ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2)
@@ -171,24 +179,25 @@ class ResonatorSpike(Element):
         # add reference point
         self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
         self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
+        self.refpoints["inductor_ground"] = pya.DPoint(self.end_box_far_left - self.l_grounding_distance, self.ground_gap_bottom)
 
-        # Add numbered ACRL source/sink refpoints for Q3D inductance measurements
+        # Add named ACRL source/sink refpoints for Q3D inductance measurements
         # These refpoints will be automatically detected by get_acrl_sim_class()
-        # Format: acrl_source_N and acrl_sink_N where N is the inductor number
+        # Format: acrl_source_<name> and acrl_sink_<name> where <name> is the net name
         if self.include_inductor:
-            # Inductor 1: Main inductor loop
+            # Main inductor loop
             source_x = (self.end_box_left + self.end_box_right) / 2  # Center of end box
             source_y = self.end_box_bottom
-            self.refpoints["acrl_source_1"] = pya.DPoint(source_x, source_y)
+            self.refpoints["acrl_source_main_inductor"] = pya.DPoint(source_x, source_y)
 
-            sink_x = self.end_box_far_left - 1.5 * self.l_grounding_distance  # Where inductor grounds
-            sink_y = self.ground_gap_bottom  # Bottom of inductor at ground
-            self.refpoints["acrl_sink_1"] = pya.DPoint(sink_x, sink_y)
+            sink_x = self.end_box_far_left - self.l_grounding_distance  # Center of inductor at ground
+            sink_y = self.ground_gap_bottom - 2 * self.a  # Match actual inductor bottom
+            self.refpoints["acrl_sink_main_inductor"] = pya.DPoint(sink_x, sink_y)
 
-            # Inductor 2: Feedline to feedline measurement (if cutout enabled)
+            # Feedline to feedline measurement (if cutout enabled)
             if self.feedline_cutout_bool:
-                self.refpoints["acrl_source_2"] = pya.DPoint(self.feedline_length/2, 0)
-                self.refpoints["acrl_sink_2"] = pya.DPoint(-self.feedline_length/2, 0)
+                self.refpoints["acrl_source_feedline"] = pya.DPoint(self.feedline_length/2, 0)
+                self.refpoints["acrl_sink_feedline"] = pya.DPoint(-self.feedline_length/2, 0)
 
     @classmethod
     def get_sim_ports(cls, simulation):
@@ -197,12 +206,25 @@ class ResonatorSpike(Element):
         For ACRL simulations, refpoints (acrl_source_N, acrl_sink_N) are used instead
         and automatically detected by get_acrl_sim_class().
 
-        For non-ACRL simulations, this method could return ports if needed.
-        Currently returns empty list - override in simulation script if ports are needed.
+        For non-ACRL simulations with lumped junction, this returns a lumped RLC port.
         """
-        # ACRL simulations use refpoints instead of ports
-        # Non-ACRL simulations don't currently need ports for this element
-        return []
+        ports = []
+
+        # If junction is in lumped model mode, add RLC port
+        if simulation.junction_bool and simulation.junction_use_lumped:
+            ports.append(
+                RefpointToInternalPort(
+                    refpoint="junction_signal",
+                    ground_refpoint="junction_ground",
+                    inductance=simulation.junction_lumped_inductance * 1e-9,  # nH to H
+                    capacitance=simulation.junction_lumped_capacitance * 1e-15,  # fF to F
+                    junction=True,  # Keep this for EPR calculations
+                    lumped_element=True,  # Also mark as lumped
+                    rlc_type="parallel",
+                )
+            )
+
+        return ports
 
     def _make_inductor(self):
         ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2 + self.angle_evap_offset)
@@ -307,31 +329,31 @@ class ResonatorSpike(Element):
     def _make_spikes_shape(self):
 
         pts_spikes_ll = [
-                pya.DPoint(self.end_box_left - self.spike_region_width, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_left - self.spike_region_width - self.spike_base_height, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_left - self.spike_region_width - self.spike_base_height, self.end_box_top - self.end_box_buffer),
-                pya.DPoint(self.end_box_left - self.spike_region_width, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_left - self.spike_region_width - self.angle_evap_offset_l, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_left - self.spike_region_width - self.spike_base_height - self.angle_evap_offset_l, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_left - self.spike_region_width - self.spike_base_height - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_left - self.spike_region_width - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer),
                 ]
         
         pts_spikes_lr = [
-                pya.DPoint(self.end_box_left, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_left + self.spike_base_height, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_left + self.spike_base_height, self.end_box_top - self.end_box_buffer),
-                pya.DPoint(self.end_box_left, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_left + self.angle_evap_offset_r, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_left + self.spike_base_height + self.angle_evap_offset_r, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_left + self.spike_base_height + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_left + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer),
                 ]
         
         pts_spikes_rl = [
-                pya.DPoint(self.end_box_right, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_right - self.spike_base_height, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_right - self.spike_base_height, self.end_box_top - self.end_box_buffer),
-                pya.DPoint(self.end_box_right, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_right - self.angle_evap_offset_l, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_right - self.spike_base_height - self.angle_evap_offset_l, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_right - self.spike_base_height - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_right - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer),
                 ]
         
         pts_spikes_rr = [
-                pya.DPoint(self.end_box_right + self.spike_region_width, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_right + self.spike_region_width + self.spike_base_height, self.end_box_bottom + self.end_box_buffer),
-                pya.DPoint(self.end_box_right + self.spike_region_width + self.spike_base_height, self.end_box_top - self.end_box_buffer),
-                pya.DPoint(self.end_box_right + self.spike_region_width, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_right + self.spike_region_width + self.angle_evap_offset_r, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_right + self.spike_region_width + self.spike_base_height + self.angle_evap_offset_r, self.end_box_bottom + self.end_box_buffer),
+                pya.DPoint(self.end_box_right + self.spike_region_width + self.spike_base_height + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer),
+                pya.DPoint(self.end_box_right + self.spike_region_width + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer),
                 ]
         
         i = 0
@@ -339,15 +361,15 @@ class ResonatorSpike(Element):
             j = 0
             while j < 2:
                 if j == 0:
-                    pts_spikes_ll.append(pya.DPoint(self.end_box_left - self.spike_region_width, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
-                    pts_spikes_lr.append(pya.DPoint(self.end_box_left, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
-                    pts_spikes_rl.append(pya.DPoint(self.end_box_right, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
-                    pts_spikes_rr.append(pya.DPoint(self.end_box_right + self.spike_region_width, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_ll.append(pya.DPoint(self.end_box_left - self.spike_region_width - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_lr.append(pya.DPoint(self.end_box_left + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_rl.append(pya.DPoint(self.end_box_right - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_rr.append(pya.DPoint(self.end_box_right + self.spike_region_width + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
                 else:
-                    pts_spikes_ll.append(pya.DPoint(self.end_box_left - self.spike_region_width + self.spike_height, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
-                    pts_spikes_lr.append(pya.DPoint(self.end_box_left - self.spike_height, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
-                    pts_spikes_rl.append(pya.DPoint(self.end_box_right + self.spike_height, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
-                    pts_spikes_rr.append(pya.DPoint(self.end_box_right + self.spike_region_width - self.spike_height, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_ll.append(pya.DPoint(self.end_box_left - self.spike_region_width + self.spike_height - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_lr.append(pya.DPoint(self.end_box_left - self.spike_height + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_rl.append(pya.DPoint(self.end_box_right + self.spike_height - self.angle_evap_offset_l, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
+                    pts_spikes_rr.append(pya.DPoint(self.end_box_right + self.spike_region_width - self.spike_height + self.angle_evap_offset_r, self.end_box_top - self.end_box_buffer - (i + j/2) * self.spike_base_width))
 
                 j += 1
             i += 1
@@ -435,14 +457,25 @@ class ResonatorSpike(Element):
         return t_cut_region
     
     def _make_junction(self):
+        """Create junction - either physical geometry or refpoints for lumped model."""
+
         total_junction_height = 2*self.junction_pad_height + 2*self.junction_finger_length + 2*self.junction_finger_tip_length - self.junction_overshoot + self.angle_evap_offset
-
-
         junction_rightx = self.end_box_left + self.junction_pad_height + self.angle_evap_offset
         junction_leftx = junction_rightx - total_junction_height
         junction_centery = self.end_box_top + self.l_junction_width/2 + self.l_junction_spacing
         res_centerx = self.end_box_far_left - self.l_grounding_distance
 
+        if self.junction_use_lumped:
+            # LUMPED MODEL: Just create refpoints for port placement
+            # Signal location at junction (end box side)
+            self.refpoints['junction_signal'] = pya.DPoint(-self.l_coupling_length/2, junction_centery)
+
+            # Ground location at inductor grounding point
+            self.refpoints['junction_ground'] = pya.DPoint(res_centerx, junction_centery)
+
+            return pya.Region()  # No geometry
+
+        # PHYSICAL JUNCTION: Create actual geometry (existing code)
         pts_inductor_extension = [
             pya.DPoint(junction_leftx + self.junction_pad_height, junction_centery + self.l_junction_width/2),
             pya.DPoint(res_centerx - self.l_width/2, junction_centery + self.l_junction_width/2),

@@ -33,7 +33,7 @@ from kqcircuits.simulations.export.simulation_export import (
 sys.path.insert(0, str(Path(__file__).parents[4]))  # Add repo root to path
 from simulations_database.tools.simulation_db import SimulationDB
 
-from kqcircuits.elements.resonator_spike import ResonatorSpike
+from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
 from kqcircuits.simulations.post_process import PostProcess
 from kqcircuits.simulations.single_element_simulation import get_single_element_sim_class
 from kqcircuits.util.export_helper import (
@@ -43,20 +43,20 @@ from kqcircuits.util.export_helper import (
 )
 
 # Parse command-line arguments
-parser = argparse.ArgumentParser(description="Run Q3D capacitance simulations on spike resonator")
+parser = argparse.ArgumentParser(description="Run Q3D capacitance simulations on grounded finger capacitor")
 parser.add_argument("--no-gui", action="store_true",
                     help="Don't open KLayout to view results (default: open KLayout)")
 parser.add_argument("--sweep-override", type=str, default=None,
-                    help="Override sweep parameters as JSON (e.g., '{\"spike_number\": [1, 2, 3]}')")
+                    help="Override sweep parameters as JSON (e.g., '{\"finger_length\": [5, 10, 20]}')")
 args = parser.parse_args()
 
 # Prepare output directory
 dir_path = create_or_empty_tmp_directory(Path(__file__).stem + "_output")
 
 # Create custom simulation class that adds a port to the center spike region
-BaseSimClass = get_single_element_sim_class(ResonatorSpike)
+BaseSimClass = get_single_element_sim_class(FingerCapacitorGroundV3)
 
-class ResonatorSpikeQ3dSim(BaseSimClass):
+class FingerCapacitorQ3dSim(BaseSimClass):
     """Custom simulation class for Q3D capacitance measurement of spike regions.
 
     Adds an internal port to the center spike region to make it a signal net.
@@ -71,51 +71,30 @@ class ResonatorSpikeQ3dSim(BaseSimClass):
         # Clear default feedline ports
         self.ports = []
 
-        # Add internal port to CENTER spike region (makes it a signal net)
-        # Port placed in the center end box region
-        # Calculate position from parameters (center box is at l_coupling_length/2)
-        center_x = 0  # Centered horizontally
-
-        # Calculate y position: end_box_bottom + half height
-        # end_box_bottom = end_box_spacing + ground_gap_bottom
-        ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing +
-                              self.b + self.a/2)
-        end_box_height = self.end_box_height
-        end_box_bottom = self.end_box_spacing + ground_gap_bottom
-        center_y = end_box_bottom + end_box_height / 2
+        # Add internal port to CENTER finger structure (makes it a signal net)
+        # Use the signal_location reference point from the element geometry
+        # This point is at the center of the structure, inside the center conductor
+        signal_loc = self.refpoints['signal_location']
 
         from kqcircuits.simulations.port import InternalPort
         self.ports.append(
             InternalPort(
                 number=1,
-                signal_location=pya.DPoint(center_x, center_y),
+                signal_location=signal_loc,
                 ground_location=None,
             )
         )
 
-SimClass = ResonatorSpikeQ3dSim
+SimClass = FingerCapacitorQ3dSim
 
 # Simulation parameters for Q3D capacitance measurement
 sim_parameters = {
-    "name": "resonator_spike_q3d",
+    "name": "finger_capacitor_q3d",
     "use_internal_ports": True,   # Use internal port on center spike region
     "use_ports": True,            # Enable port system
-    "box": pya.DBox(pya.DPoint(0, -3000), pya.DPoint(1000, 3000)),
-    "shadow_angle_1": 0,
-    "shadow_angle_2": 0,
-    #"spike_number": 1,
-    #"spike_height": 2,
-    #"spike_base_width": 2,
-    #"t_cut_number": 0,
-    #"spike_gap": 0.5,
+    "box": pya.DBox(pya.DPoint(0, 0), pya.DPoint(500, 1500)),
+    "ground_cutout_bool": True, 
     "face_stack": ["1t1"],
-
-    # CRITICAL: Disable inductor to isolate spike system from ground
-    # This allows measurement of spike capacitance without ground connection
-    "include_inductor": False,
-
-    # Disable junction for Q3D simulations (not needed for capacitance)
-    "junction_bool": False,
 }
 
 # Q3D export parameters
@@ -130,8 +109,7 @@ export_parameters = {
     "use_floating_islands": True,  # Treat isolated spike system as floating net
     # Custom mesh refinement for accurate results in spike regions
     "mesh_size": {
-        "1t1_mesh_1": 0.25,    # Fine mesh around spike regions (0.25 µm)
-        "1t1_mesh_3": 3,    # Fine mesh around cap regions (3 µm)
+        "1t1_mesh_4": 0.5,    # Fine mesh around spike regions (0.25 µm)
     },
 }
 
@@ -145,10 +123,10 @@ simulations = []
 # Define base sweep parameters (can be overridden via --sweep-override)
 import json
 sweep_params = {
-    "spike_number": [0, 5, 10, 15, 20],
-    #"spike_gap": [0.025, 0.05, 0.1, 0.15, 0.2,],
-    #"spike_height": [2.0, 4.0, 10.0, 15.0, 20.0],
-    #"spike_base_width": [0.125, 0.25, 0.5, 1.0, 2.0],
+    #"finger_number": [2, 4, 6, 8, 10],
+    #"finger_length": [5, 10, 20, 50, 100],
+    #"finger_width": [1, 2, 3, 5, 10, 20],
+    "finger_gap": [1, 2, 3, 5, 10, 20],
 }
 
 # Apply sweep overrides if provided
@@ -168,35 +146,11 @@ simulations += cross_sweep_simulation(
     sweep_params,
 )
 
-# Additional parameter sweeps (commented out - uncomment as needed)
-
-# Sweep spike gap to characterize capacitance vs spacing
-# simulations += cross_sweep_simulation(
-#     layout,
-#     SimClass,
-#     sim_parameters,
-#     {
-#         "spike_gap": [0.05, 0.1, 0.15, 0.2, 0.25],
-#         "spike_number": [100, 200, 300],
-#     },
-# )
-
-# Sweep spike height to characterize capacitance vs finger length
-# simulations += cross_sweep_simulation(
-#     layout,
-#     SimClass,
-#     sim_parameters,
-#     {
-#         "spike_height": [0.25, 0.5, 1.0, 1.5, 2.0],
-#         "spike_number": [100, 200, 300],
-#     },
-# )
-
 # Register simulations with database
 db = SimulationDB()
 db_folders = db.register_simulations(
     simulations=simulations,
-    design_name='spike_resonator',
+    design_name='finger_cap_grounded',
     sim_parameters=sim_parameters,
     export_parameters=export_parameters,
     output_folder=dir_path
@@ -213,7 +167,7 @@ print(f"Number of simulations: {len(simulations)}")
 
 # Print next steps for database workflow
 print(f"\n{'='*60}")
-print(f"Next step:")
+print(f"→ Next step:")
 print(f"  Run ANSYS simulations: {dir_path}/simulation.bat")
 print(f"  (Results will be automatically saved to database)")
 print(f"{'='*60}\n")

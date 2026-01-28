@@ -276,8 +276,10 @@ class SimulationQueue:
 
         try:
             # Execute script and capture output
+            # Auto-answer 'y' to any prompts (like "overwrite existing results?")
             result = subprocess.run(
                 cmd,
+                input='y\n',  # Auto-confirm prompts
                 capture_output=True,
                 text=True,
                 check=False,

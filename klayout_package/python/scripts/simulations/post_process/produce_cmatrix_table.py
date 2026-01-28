@@ -30,6 +30,37 @@ def _get_excitations(json_data):
     return {l["excitation"] for l in json_data["layers"].values() if l.get("excitation", 0) > 0}
 
 
+def _get_matrix_label(matrix_type, i, j, net_names):
+    """Generate matrix element label with descriptive net names.
+
+    Args:
+        matrix_type: "C", "L", or "R"
+        i, j: Matrix indices (0-based)
+        net_names: Dictionary mapping port numbers (1-based) to net names
+
+    Returns:
+        String label like "C_signal" (self) or "C_signal_ground" (mutual)
+    """
+    # Convert to 1-based port numbers
+    port_i = i + 1
+    port_j = j + 1
+
+    # Use net names if available, otherwise fall back to numbers
+    if net_names and port_i in net_names and port_j in net_names:
+        name_i = net_names[port_i]
+        name_j = net_names[port_j]
+
+        if i == j:
+            # Self-capacitance
+            return f"{matrix_type}_{name_i}"
+        else:
+            # Mutual capacitance
+            return f"{matrix_type}_{name_i}_{name_j}"
+    else:
+        # Fall back to numbered labels
+        return f"{matrix_type}{port_i}{port_j}"
+
+
 # Find data files
 path = os.path.curdir
 result_files = [f for f in os.listdir(path) if f.endswith("_project_results.json")]
@@ -37,6 +68,15 @@ if result_files:
     # Find parameters that are swept
     definition_files = [f.replace("_project_results.json", ".json") for f in result_files]
     parameters, parameter_values = find_varied_parameters(definition_files)
+
+    # Load net name mappings from definition files
+    net_names_map = {}
+    for key, def_file in zip(parameter_values.keys(), definition_files):
+        def_data = load_json(def_file)
+        net_names = def_data.get("parameters", {}).get("extra_json_data", {}).get("net_names", {})
+        if net_names:
+            # Convert string keys to int keys and store
+            net_names_map[key] = {int(k): v for k, v in net_names.items()}
 
     # Load result data
     cmatrix = {}
@@ -47,7 +87,13 @@ if result_files:
             print(f"Neither 'CMatrix' nor 'Cs' found in the result file {result_file}")
             continue
 
-        cmatrix[key] = {f"C{i+1}{j+1}": c for i, l in enumerate(cdata) for j, c in enumerate(l)}
+        # Get net names for this simulation (if available)
+        net_names = net_names_map.get(key, {})
+
+        cmatrix[key] = {
+            _get_matrix_label("C", i, j, net_names): c
+            for i, l in enumerate(cdata) for j, c in enumerate(l)
+        }
 
     # deembedding
     try:

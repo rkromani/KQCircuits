@@ -115,6 +115,8 @@ class RefpointToInternalPort(RefpointToSimPort):
         capacitance=0,
         face=0,
         junction=False,
+        lumped_element=False,
+        rlc_type="parallel",
     ):
         super().__init__(refpoint, face)
         (
@@ -124,7 +126,9 @@ class RefpointToInternalPort(RefpointToSimPort):
             self.inductance,
             self.capacitance,
             self.junction,
-        ) = (ground_refpoint, resistance, reactance, inductance, capacitance, junction)
+            self.lumped_element,
+            self.rlc_type,
+        ) = (ground_refpoint, resistance, reactance, inductance, capacitance, junction, lumped_element, rlc_type)
 
 
 class RefpointToEdgePort(RefpointToSimPort):
@@ -140,6 +144,8 @@ class RefpointToEdgePort(RefpointToSimPort):
         face=0,
         deembed_len=None,
         junction=False,
+        lumped_element=False,
+        rlc_type="parallel",
         size=None,
         deembed_cross_section=None,
     ):
@@ -151,6 +157,8 @@ class RefpointToEdgePort(RefpointToSimPort):
             self.capacitance,
             self.deembed_len,
             self.junction,
+            self.lumped_element,
+            self.rlc_type,
             self.size,
             self.deembed_cross_section,
         ) = (
@@ -160,6 +168,8 @@ class RefpointToEdgePort(RefpointToSimPort):
             capacitance,
             deembed_len,
             junction,
+            lumped_element,
+            rlc_type,
             size,
             deembed_cross_section,
         )

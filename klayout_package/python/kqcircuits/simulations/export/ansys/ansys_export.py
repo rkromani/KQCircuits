@@ -128,7 +128,8 @@ def export_ansys_bat(
             ])
 
             file.write("echo Processing {} simulations in batch mode...\n".format(len(json_filenames)))
-            command = '"{}" -scriptargs "{}" -RunScriptAndExit "{}"\n'.format(
+            # Use -RunScript instead of -RunScriptAndExit to keep ANSYS window open (visible GUI)
+            command = '"{}" -scriptargs "{}" -RunScript "{}"\n'.format(
                 ANSYS_EXECUTABLE,
                 json_list,
                 batch_script,

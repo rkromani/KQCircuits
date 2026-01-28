@@ -834,6 +834,24 @@ class Simulation:
                         element_layer_idx = self.get_layer(mesh_layer_name, face_id)
                         self.cell.shapes(element_layer_idx).clear()
 
+                # Insert lumped RLC element geometry (non-model surface for boundary attachment)
+                # This layer provides geometry that ANSYS can attach lumped RLC boundaries to
+                # material=None prevents it from contributing to the electromagnetic model
+                lumped_rlc_region = (
+                    self.simplified_region(self.region_from_layer(face_id, "lumped_rlc")) & face_box_region
+                )
+                if not lumped_rlc_region.is_empty():
+                    self.insert_layer(
+                        f"{face_id}_lumped_rlc",
+                        lumped_rlc_region,
+                        z[face_id][0],  # At conductor surface
+                        z[face_id][0],  # Zero thickness
+                        material=None,  # Non-model object - provides surface for boundary attachment only
+                    )
+                    # Clear the original element layer to avoid duplication in exports
+                    element_layer_idx = self.get_layer("lumped_rlc", face_id)
+                    self.cell.shapes(element_layer_idx).clear()
+
             self.insert_stacked_up_layers(stack, z[i + 1])
 
             # Rest of the features are not available with multilayer stack-up

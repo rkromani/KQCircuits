@@ -21,7 +21,7 @@ from kqcircuits.pya_resolver import pya
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from
 from kqcircuits.elements.element import Element
 from kqcircuits.elements.finger_capacitor_taper import FingerCapacitorTaper
-from kqcircuits.util.refpoints import WaveguideToSimPort
+from kqcircuits.util.refpoints import WaveguideToSimPort, RefpointToInternalPort
 
 
 class FingerCapacitorGroundV3(Element):
@@ -41,6 +41,10 @@ class FingerCapacitorGroundV3(Element):
     finger_number = Param(pdt.TypeInt, "Number of fingers", 4)
     corner_r = Param(pdt.TypeDouble, "Corner rounding radius", 1, unit="μm")
     ground_cutout_bool = Param(pdt.TypeBoolean, "Whether to cut off center conductor from ground for sims", False)
+
+    # Lumped model parameters
+    use_lumped_model = Param(pdt.TypeBoolean, "Use lumped capacitance instead of full geometry", False)
+    lumped_capacitance = Param(pdt.TypeDouble, "Capacitance for lumped model (fF)", 100.0, unit="fF")
     
     
     def can_create_from_shape_impl(self):
@@ -51,6 +55,61 @@ class FingerCapacitorGroundV3(Element):
 
         ground_width = self.a + 2 * (self.finger_length + self.finger_gap)
         ground_length = self.finger_number * 2 * (self.finger_width + self.finger_gap)
+
+        if self.use_lumped_model:
+            # LUMPED MODEL MODE: Create geometry on lumped_rlc layer for boundary attachment
+            # This layer exports to ANSYS as a non-model surface that lumped RLC boundaries attach to
+
+            self.refpoints['top_port'] = pya.DPoint(0, 0)
+            self.refpoints['bottom_port'] = pya.DPoint(0, -ground_length)
+
+            # Create attachment rectangle on lumped_rlc layer
+            # This geometry will be exported to ANSYS for boundary attachment
+            # Width and length define the region where the lumped capacitor exists
+            cap_width = self.a  # Width matches waveguide
+            cap_length = ground_length  # Full capacitor region length
+
+            # Rectangle geometry for ANSYS boundary attachment
+            # This will be exported as a non-model surface (material=None in simulation.py)
+            attachment_region = pya.Region(
+                pya.DPolygon(
+                    [
+                        pya.DPoint(-cap_width/2, 0),           # Top-left
+                        pya.DPoint(cap_width/2, 0),            # Top-right
+                        pya.DPoint(cap_width/2, -cap_length),  # Bottom-right
+                        pya.DPoint(-cap_width/2, -cap_length), # Bottom-left
+                    ]
+                ).to_itype(self.layout.dbu)
+            )
+
+            # Insert on lumped_rlc layer - will be extracted by simulation.py and exported to ANSYS
+            self.cell.shapes(self.get_layer("lumped_rlc")).insert(attachment_region)
+
+            # Signal and ground locations define the lumped RLC current line direction
+            # ANSYS will use these coordinates to attach the lumped RLC boundary
+            signal_y = -cap_length * 0.2  # Near resonator connection (20% down)
+            ground_y = -cap_length * 0.8  # Near ground connection (80% down)
+            ground_region = pya.Region(
+                pya.DPolygon(
+                    [
+                        pya.DPoint(-cap_width, 0),           # Top-left
+                        pya.DPoint(-cap_width/2, 0),
+                        pya.DPoint(-cap_width/2, signal_y),
+                        pya.DPoint(cap_width/2, signal_y),
+                        pya.DPoint(cap_width/2, 0),
+                        pya.DPoint(cap_width, 0),            # Top-right
+                        pya.DPoint(cap_width, ground_y),  # Bottom-right
+                        pya.DPoint(-cap_width, ground_y), # Bottom-left
+                    ]
+                ).to_itype(self.layout.dbu)
+            )
+            self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(ground_region)
+
+            # Diagonal placement avoids numerical issues in polygon creation
+            self.refpoints['signal_location'] = pya.DPoint(-cap_width/4, signal_y)
+            self.refpoints['ground_location'] = pya.DPoint(cap_width/4, ground_y)
+
+            return  # Skip full capacitor geometry creation
 
         region_ground = pya.Region(
             pya.DPolygon(
@@ -194,4 +253,34 @@ class FingerCapacitorGroundV3(Element):
         # Reference point for internal port placement in capacitance simulations
         # This point is at the center of the structure, inside the center conductor
         self.refpoints['signal_location'] = pya.DPoint(0, -ground_length/2)
+
+    @classmethod
+    def get_sim_ports(cls, simulation):
+        """Return simulation ports.
+
+        If use_lumped_model=True, returns lumped RLC port.
+        If use_lumped_model=False, returns no ports (just geometry).
+        """
+        # Check for both singular and plural parameter names for compatibility
+        use_lumped = getattr(simulation, 'use_lumped_model', False) or getattr(simulation, 'use_lumped_models', False)
+
+        if use_lumped:
+            # Return lumped capacitor port
+            # Get capacitance from either singular or plural parameter name
+            cap_value = getattr(simulation, 'lumped_capacitance', getattr(simulation, 'cap_lumped_value', 100.0))
+
+            return [
+                RefpointToInternalPort(
+                    refpoint="signal_location",
+                    ground_refpoint="ground_location",
+                    capacitance=cap_value * 1e-15,  # fF to F
+                    inductance=0,
+                    resistance=0,
+                    lumped_element=True,
+                    rlc_type="parallel",
+                )
+            ]
+        else:
+            # Full geometry - no ports needed
+            return []
 

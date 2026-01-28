@@ -21,18 +21,24 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-import numpy as np
 
 from kqcircuits.pya_resolver import pya
 from kqcircuits.simulations.export.ansys.ansys_export import export_ansys
+from kqcircuits.simulations.export.ansys.ansys_solution import AnsysQ3dSolution
 from kqcircuits.simulations.export.simulation_export import (
     cross_sweep_simulation,
+    cross_sweep_solution,
+    cross_combine,
     export_simulation_oas,
 )
 
+# Import simulation database manager
+sys.path.insert(0, str(Path(__file__).parents[4]))  # Add repo root to path
+from simulations_database.tools.simulation_db import SimulationDB
+
 from kqcircuits.elements.resonator_spike import ResonatorSpike
 from kqcircuits.simulations.post_process import PostProcess
-from kqcircuits.simulations.single_element_simulation import get_single_element_sim_class
+from kqcircuits.simulations.single_element_simulation import get_acrl_sim_class
 from kqcircuits.util.export_helper import (
     create_or_empty_tmp_directory,
     get_active_or_new_layout,
@@ -43,91 +49,32 @@ from kqcircuits.util.export_helper import (
 parser = argparse.ArgumentParser(description="Run Q3D ACRL simulations on spike resonator (extracts C, L, and R matrices)")
 parser.add_argument("--no-gui", action="store_true",
                     help="Don't open KLayout to view results (default: open KLayout)")
+parser.add_argument("--sweep-override", type=str, default=None,
+                    help="Override sweep parameters as JSON (e.g., '{\"l_coupling_distance\": [2, 5, 10]}')")
 args = parser.parse_args()
 
 # Prepare output directory
 dir_path = create_or_empty_tmp_directory(Path(__file__).stem + "_output")
 
-# Create custom simulation class that adds a port to the center spike region
-BaseSimClass = get_single_element_sim_class(ResonatorSpike)
-
-class ResonatorSpikeACRLSim(BaseSimClass):
-    """Custom simulation class for Q3D ACRL measurement through inductor.
-
-    ACRL source/sink locations are stored in extra_json_data (not as ports) to avoid
-    creating unwanted excitations. Coordinates are used by ANSYS import script to find
-    nearest edges for ACRL source/sink assignment.
-    """
-
-    def build(self):
-        # Build element geometry WITHOUT calling super().build() to avoid get_sim_ports
-        # Instead, manually add the element and set ports
-        simulation_cell = self.add_element(
-            ResonatorSpike, **{**self.get_parameters(), "junction_type": "Sim", "fluxline_type": "none"}
-        )
-
-        element_trans = pya.DTrans(0, False, self.box.center())
-        _, refp = self.insert_cell(simulation_cell, element_trans, rec_levels=None)
-        self.refpoints = refp
-
-        # Create ONE InternalPort to designate inductor/end_box as Net1 (SignalNet)
-        # ACRL source/sink locations are stored in extra_json_data to avoid port-based excitations
-        from kqcircuits.simulations.port import InternalPort
-
-        if self.include_inductor:
-            # Calculate positions from geometry (same as in resonator_spike.py)
-            ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing +
-                                  self.b + self.a/2)
-            end_box_bottom = self.end_box_spacing + ground_gap_bottom
-            end_box_far_left = (self.l_coupling_length/2 - self.end_box_width -
-                               (self.spike_height * 2 + self.spike_gap +
-                                self.resist_thickness * (np.sin(np.radians(self.shadow_angle_1)) -
-                                np.sin(np.radians(self.shadow_angle_2)))) - self.end_box_width)
-
-            source_x = (self.l_coupling_length/2 - self.end_box_width +
-                       self.l_coupling_length/2 + self.end_box_width) / 2
-            source_y = end_box_bottom
-
-            sink_x = end_box_far_left - 1.5 * self.l_grounding_distance
-            sink_y = ground_gap_bottom
-
-            # Transform coordinates from element-local to simulation box coordinates
-            # by applying the element_trans transformation
-            source_point_transformed = element_trans.trans(pya.DPoint(source_x, source_y))
-            sink_point_transformed = element_trans.trans(pya.DPoint(sink_x, sink_y))
-
-            # Create single port in middle of conductor to designate as Net1
-            mid_x = (source_x + sink_x) / 2
-            mid_y = (source_y + sink_y) / 2
-            mid_point_transformed = element_trans.trans(pya.DPoint(mid_x, mid_y))
-            self.ports = [InternalPort(number=1, signal_location=mid_point_transformed, ground_location=None)]
-
-            # Store actual ACRL source/sink locations separately (in transformed coordinates)
-            self.extra_json_data = {
-                "acrl_port_locations": {
-                    "source": [source_point_transformed.x, source_point_transformed.y, 0.0],
-                    "sink": [sink_point_transformed.x, sink_point_transformed.y, 0.0]
-                }
-            }
-        else:
-            self.ports = []
-
-SimClass = ResonatorSpikeACRLSim
+# Create ACRL simulation class using generic helper
+# This automatically detects numbered ACRL refpoints (acrl_source_N, acrl_sink_N)
+# from the ResonatorSpike element and stores them in extra_json_data
+SimClass = get_acrl_sim_class(ResonatorSpike)
 
 # Simulation parameters for Q3D ACRL measurement
 sim_parameters = {
     "name": "resonator_spike_acrl",
     "use_internal_ports": True,   # Use internal port on center spike region
     "use_ports": True,            # Enable port system
-    "box": pya.DBox(pya.DPoint(0, -700), pya.DPoint(1000, 3000)),
-    "shadow_angle_1": 0,
-    "shadow_angle_2": 0,
-    "spike_number": 50,
-    "spike_height": 0.5,
-    "spike_base_width": 0.25,
-    "end_box_height": 50,
-    "l_height": 1600,
-    "spike_gap": 0.1,
+    "box": pya.DBox(pya.DPoint(0, -3000), pya.DPoint(2000, 3000)),
+    #"shadow_angle_1": 0,
+    #"shadow_angle_2": 0,
+    #"spike_number": 50,
+    #"spike_height": 0.5,
+    #"spike_base_width": 0.25,
+    #"end_box_height": 50,
+    #"l_height": 1600,
+    #"spike_gap": 0.1,
     "face_stack": ["1t1"],
 
     # Enable inductor for ACRL inductance measurement through inductor
@@ -146,11 +93,13 @@ export_parameters = {
     "ansys_tool": "q3d",
     # Use new post-processing script that handles C, L, and R matrices
     "post_process": PostProcess("produce_matrix_tables.py"),
-    "exit_after_run": True,
+    "exit_after_run": False,
     "percent_error": 0.3,  # Reasonable accuracy (0.2-0.5 typical for production)
-    "minimum_converged_passes": 2,
+    "minimum_converged_passes": 3,
     "maximum_passes": 20,
     "use_floating_islands": True,  # Treat isolated spike system as floating net
+
+    "frequency_units": "GHz",
 
     # NEW: Enable ACRL (AC Resistance and Inductance extraction)
     # Source/sink locations will be read from Net1_source and Net1_sink ports in geometry
@@ -167,42 +116,63 @@ export_parameters = {
 logging.basicConfig(level=logging.WARN, stream=sys.stdout)
 layout = get_active_or_new_layout()
 
-# Parameter sweeps
-simulations = []
+# Define base sweep parameters (can be overridden via --sweep-override)
+import json
+sweep_params = {
+    #"l_coupling_length": [50, 100, 250, 500],
+    #"feedline_length": [500, 750, 1000, 1250, 1500],
+    #"feedline_spacing": [1, 2, 5, 10, 20],
+    #"l_coupling_distance": [2, 5]
+    "l_height": [1000, 1500, 2000, 2500],
+}
 
-# Single test configuration to visualize ACRL port placement
-simulations += cross_sweep_simulation(
+# Apply sweep overrides if provided
+if args.sweep_override:
+    try:
+        sweep_overrides = json.loads(args.sweep_override)
+        sweep_params.update(sweep_overrides)
+        print(f"Applied sweep overrides: {sweep_overrides}")
+    except json.JSONDecodeError as e:
+        print(f"Warning: Could not parse sweep overrides: {e}")
+
+# Create geometry simulations
+simulations = cross_sweep_simulation(
     layout,
     SimClass,
     sim_parameters,
-    {
-        "spike_number": [50],  # Single test case for visualization
-    },
+    sweep_params,
 )
 
-# Additional parameter sweeps (commented out - uncomment as needed)
+# Create frequency sweep solutions
+# Frequency parameter belongs to the solution, not the simulation
+"""solutions = cross_sweep_solution(
+    AnsysQ3dSolution,
+    {
+        "percent_error": export_parameters["percent_error"],
+        "minimum_converged_passes": export_parameters["minimum_converged_passes"],
+        "maximum_passes": export_parameters["maximum_passes"],
+        "use_floating_islands": export_parameters["use_floating_islands"],
+        "solve_acrl": export_parameters["solve_acrl"],
+        "frequency_units": export_parameters["frequency_units"],
+    },
+    {
+        "frequency": [5],  # 100 MHz, 1 GHz, 5 GHz
+    },
+)"""
 
-# Sweep spike gap to characterize impedance vs spacing
-# simulations += cross_sweep_simulation(
-#     layout,
-#     SimClass,
-#     sim_parameters,
-#     {
-#         "spike_gap": [0.05, 0.1, 0.15, 0.2, 0.25],
-#         "spike_number": [100, 200],
-#     },
-# )
+# Combine simulations with solutions to create all combinations
+#simulation_solution_pairs = cross_combine(simulations, solution)
 
-# Sweep spike height to characterize impedance vs finger length
-# simulations += cross_sweep_simulation(
-#     layout,
-#     SimClass,
-#     sim_parameters,
-#     {
-#         "spike_height": [0.25, 0.5, 1.0, 1.5],
-#         "spike_number": [100, 200],
-#     },
-# )
+
+# Register simulations with database
+db = SimulationDB()
+db_folders = db.register_simulations(
+    simulations=simulations,
+    design_name='spike_resonator',
+    sim_parameters=sim_parameters,
+    export_parameters=export_parameters,
+    output_folder=dir_path
+)
 
 # Export Ansys Q3D files with ACRL enabled
 export_ansys(simulations, **export_parameters)
@@ -211,12 +181,21 @@ export_ansys(simulations, **export_parameters)
 oas_file = export_simulation_oas(simulations, dir_path)
 print(f"\nExported Q3D ACRL simulation files to: {dir_path}")
 print(f"OAS file: {oas_file}")
-print(f"Number of simulations: {len(simulations)}")
-print(f"\nACRL enabled: Will extract L-matrix, R-matrix, and C-matrix")
-print(f"Expected output files:")
-print(f"  - *_cmatrix_results.csv (capacitance matrix)")
-print(f"  - *_lmatrix_results.csv (inductance matrix)")
-print(f"  - *_rmatrix_results.csv (resistance matrix)")
+print(f"Number of geometry variations: {len(simulations)}")
+#print(f"Number of frequency points: {len(solutions)}")
+#print(f"Total simulations (geometry × frequency): {len(simulation_solution_pairs)}")
+#print(f"\nACRL enabled: Will extract L-matrix, R-matrix, and C-matrix")
+#print(f"Expected output files:")
+#print(f"  - *_cmatrix_results.csv (capacitance matrix)")
+#print(f"  - *_lmatrix_results.csv (inductance matrix)")
+#print(f"  - *_rmatrix_results.csv (resistance matrix)")
+
+# Print next steps for database workflow
+print(f"\n{'='*60}")
+print(f"Next step:")
+print(f"  Run ANSYS simulations: {dir_path}/simulation.bat")
+print(f"  (Results will be automatically saved to database)")
+print(f"{'='*60}\n")
 
 # Optionally open in KLayout
 if not args.no_gui:

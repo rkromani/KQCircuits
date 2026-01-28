@@ -127,9 +127,11 @@ def plot_q3d_results(sweep_path, x_values, sim_data, param_name, design, timesta
     plots_folder = sweep_path / 'plots'
     plots_folder.mkdir(exist_ok=True)
 
-    # Get all available matrix elements
-    capacitance_keys = [k for k in sample_results.keys() if k.startswith('capacitance_')]
-    inductance_keys = [k for k in sample_results.keys() if k.startswith('inductance_')]
+    # Get all available matrix elements (support both old and new naming)
+    # Old style: capacitance_11, inductance_12
+    # New style: C_feedline, L_feedline_main_inductor
+    capacitance_keys = [k for k in sample_results.keys() if k.startswith('capacitance_') or k.startswith('C_')]
+    inductance_keys = [k for k in sample_results.keys() if k.startswith('inductance_') or k.startswith('L_')]
 
     # Format timestamp for plot
     try:
@@ -140,31 +142,54 @@ def plot_q3d_results(sweep_path, x_values, sim_data, param_name, design, timesta
 
     # Helper function to separate matrix elements
     def separate_matrix_elements(keys):
-        """Separate matrix elements into diagonal and unique off-diagonal pairs."""
+        """Separate matrix elements into diagonal and unique off-diagonal pairs.
+
+        Handles both old-style (inductance_11) and new-style (L_feedline) keys.
+        """
         diagonal = []
         offdiag_unique = []
         seen_pairs = set()
 
         for k in keys:
             parts = k.split('_')
-            if len(parts) >= 2:
-                indices = parts[1]  # e.g., "11", "12", "21"
-                if len(indices) >= 2:
-                    i, j = indices[0], indices[1]
-                    if i == j:
-                        diagonal.append(k)
-                    else:
-                        # Only keep unique pairs (e.g., keep "12" but skip "21")
-                        pair = tuple(sorted([i, j]))
-                        if pair not in seen_pairs:
-                            seen_pairs.add(pair)
-                            offdiag_unique.append(k)
+
+            # Check if this is new-style naming (descriptive names like L_feedline or L_feedline_inductor)
+            if len(parts) >= 2 and (k.startswith('C_') or k.startswith('L_') or k.startswith('R_')):
+                # New style: count underscores to determine if self or mutual
+                # Self: C_feedline (1 underscore after prefix)
+                # Mutual: C_feedline_inductor (2+ underscores after prefix)
+                if len(parts) == 2:
+                    diagonal.append(k)  # Self-inductance/capacitance
+                else:
+                    # Mutual - check if we've seen the reverse
+                    net_names = parts[1:]
+                    pair = tuple(sorted(net_names))
+                    if pair not in seen_pairs:
+                        seen_pairs.add(pair)
+                        offdiag_unique.append(k)
+            else:
+                # Old style: extract numeric indices
+                if len(parts) >= 2:
+                    indices = parts[1]  # e.g., "11", "12", "21"
+                    if len(indices) >= 2:
+                        i, j = indices[0], indices[1]
+                        if i == j:
+                            diagonal.append(k)
+                        else:
+                            # Only keep unique pairs (e.g., keep "12" but skip "21")
+                            pair = tuple(sorted([i, j]))
+                            if pair not in seen_pairs:
+                                seen_pairs.add(pair)
+                                offdiag_unique.append(k)
 
         return diagonal, offdiag_unique
 
     # Helper function to create individual element plot
     def plot_single_element(key, matrix_type, unit, y_label):
-        """Create a plot for a single matrix element with error bars."""
+        """Create a plot for a single matrix element with error bars.
+
+        Handles both old-style (inductance_11) and new-style (L_feedline) keys.
+        """
         fig, ax = plt.subplots(figsize=(10, 6))
 
         # Get y-values
@@ -176,29 +201,67 @@ def plot_q3d_results(sweep_path, x_values, sim_data, param_name, design, timesta
         else:
             y_errors = None
 
-        # Extract indices for label
-        indices = key.replace(f'{matrix_type}_', '')
-        i, j = indices[0], indices[1] if len(indices) > 1 else indices[0]
+        # Determine if this is new-style or old-style naming
+        is_new_style = key.startswith('C_') or key.startswith('L_') or key.startswith('R_')
+
+        if is_new_style:
+            # New style: use descriptive names as-is
+            parts = key.split('_', 1)  # Split only on first underscore to get prefix and net info
+            if len(parts) >= 2:
+                matrix_prefix = parts[0]  # 'L', 'C', or 'R'
+                net_info = parts[1]  # e.g., "feedline" or "feedline_main_inductor"
+
+                # Determine if self or mutual based on underscore count
+                # Self: one component (feedline, main_inductor)
+                # Mutual: multiple components (feedline_main_inductor)
+                underscore_count = key.count('_')
+
+                if underscore_count == 1:
+                    # Self term (only one underscore: the one after the matrix prefix)
+                    element_type = 'Self'
+                else:
+                    # Mutual term (more than one underscore)
+                    element_type = 'Mutual'
+
+                # Use the descriptive name directly in labels
+                label = f'{matrix_prefix}_{{{net_info}}}'
+                title_element = f'{matrix_prefix}_{{{net_info}}}'
+                filename_base = net_info
+            else:
+                # Fallback
+                element_type = 'Unknown'
+                label = key
+                title_element = key
+                filename_base = key.replace(f'{matrix_type}_', '')
+        else:
+            # Old style: extract numeric indices
+            indices = key.replace(f'{matrix_type}_', '')
+            i, j = indices[0], indices[1] if len(indices) > 1 else indices[0]
+
+            if i == j:
+                element_type = 'Self'
+            else:
+                element_type = 'Mutual'
+
+            label = f'{matrix_type[0].upper()}_{{{i}{j}}}'
+            title_element = f'{matrix_type[0].upper()}_{{{i}{j}}}'
+            filename_base = indices
 
         # Plot with error bars
         if y_errors is not None:
             ax.errorbar(x_values, y_values, yerr=y_errors, fmt='o-',
                        linewidth=2, markersize=8, capsize=5, capthick=2,
-                       label=f'{matrix_type[0].upper()}_{{{i}{j}}}')
+                       label=label)
         else:
             ax.plot(x_values, y_values, 'o-', linewidth=2, markersize=8,
-                   label=f'{matrix_type[0].upper()}_{{{i}{j}}}')
+                   label=label)
 
         # Format plot
         ax.set_xlabel(param_name.replace('_', ' ').title(), fontsize=12)
         ax.set_ylabel(f'{y_label} ({unit})', fontsize=12)
 
         # Create title
-        if i == j:
-            element_type = 'Self'
-        else:
-            element_type = 'Mutual'
-        ax.set_title(f'{element_type} {y_label} {matrix_type[0].upper()}_{{{i}{j}}} vs {param_name.replace("_", " ").title()}\n{design}',
+        ax.set_title(f'{element_type} {y_label} {title_element} vs {param_name.replace("_", " ").title()}\n{design}',
                     fontsize=14)
 
         ax.legend()
@@ -215,7 +278,7 @@ def plot_q3d_results(sweep_path, x_values, sim_data, param_name, design, timesta
         plt.tight_layout()
 
         # Save with descriptive filename
-        filename = f'{matrix_type}_{indices}.png'
+        filename = f'{matrix_type}_{filename_base}.png'
         plt.savefig(plots_folder / filename, dpi=150)
         plt.close()
 
