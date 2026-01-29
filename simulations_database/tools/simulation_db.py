@@ -155,6 +155,7 @@ class SimulationDB:
             f'{sim_name}_*.s2p',           # sim_name_*.s2p
             f'{sim_name}.csv',             # sim_name.csv (exact match)
             f'{sim_name}_*.csv',           # sim_name_*.csv
+            f'{sim_name}_*.eig',           # sim_name_project_modes.eig (eigenmode results)
         ]
 
         for pattern in patterns:
@@ -174,7 +175,7 @@ class SimulationDB:
         files_copied = 0
         for file_path in result_files:
             # Determine destination
-            if 'results' in file_path.name or 'Matrix' in file_path.name or file_path.suffix in ['.s2p', '.csv']:
+            if 'results' in file_path.name or 'Matrix' in file_path.name or file_path.suffix in ['.s2p', '.csv', '.eig']:
                 dest = db_path / 'results' / file_path.name
             else:
                 dest = db_path / file_path.name
@@ -194,6 +195,11 @@ class SimulationDB:
 
             # Try to extract key results if available
             results_json = db_path / 'results' / f'{sim_name}_project_results.json'
+            eig_file = db_path / 'results' / f'{sim_name}_project_modes.eig'
+
+            results_summary = {}
+
+            # Parse JSON results (Q3D matrices, HFSS data, etc.)
             if results_json.exists():
                 try:
                     with open(results_json, 'r') as f:
@@ -204,9 +210,20 @@ class SimulationDB:
                     extra_json = metadata.get('parameters', {}).get('extra_json_data') or {}
                     net_names = extra_json.get('net_names', {})
 
-                    metadata['results_summary'] = self._extract_results_summary(results, net_names)
+                    results_summary = self._extract_results_summary(results, net_names)
                 except Exception as e:
-                    print(f"Warning: Could not extract results summary for {sim_name}: {e}")
+                    print(f"Warning: Could not extract results summary from JSON for {sim_name}: {e}")
+
+            # Parse eigenmode .eig file if available
+            if eig_file.exists():
+                try:
+                    eigenmode_data = self._parse_eig_file(eig_file)
+                    results_summary.update(eigenmode_data)
+                except Exception as e:
+                    print(f"Warning: Could not parse eigenmode file for {sim_name}: {e}")
+
+            if results_summary:
+                metadata['results_summary'] = results_summary
 
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
@@ -426,6 +443,42 @@ class SimulationDB:
         }
 
         return metadata
+
+    def _parse_eig_file(self, eig_file_path):
+        """Parse ANSYS eigenmode .eig file to extract frequency and Q factors.
+
+        Args:
+            eig_file_path: Path to .eig file
+
+        Returns:
+            dict: Dictionary with eigenmode results, e.g., {'frequency_mode_1': 6.21, 'Q_mode_1': 1000}
+        """
+        results = {}
+
+        with open(eig_file_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+
+                # Skip comments and empty lines
+                if line.startswith('#') or not line:
+                    continue
+
+                # Parse data lines (mode number, frequency, Q)
+                parts = line.split()
+                if len(parts) >= 3:
+                    try:
+                        mode_num = int(parts[0])
+                        frequency = float(parts[1])  # GHz
+                        q_factor = float(parts[2])
+
+                        # Store with descriptive keys
+                        results[f'frequency_mode_{mode_num}'] = frequency
+                        results[f'Q_mode_{mode_num}'] = q_factor
+                    except ValueError:
+                        # Skip lines that can't be parsed as numbers
+                        continue
+
+        return results
 
     def _extract_results_summary(self, results, net_names=None):
         """Extract key metrics from results JSON for quick reference.

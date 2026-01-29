@@ -197,6 +197,12 @@ if design_type == "HFSS":
     elif oDesign.GetSolutionType() == "Eigenmode":
         oSolutions.ExportEigenmodes(solution, oSolutions.ListVariations(solution)[0], eig_filename)
 
+        # Add metadata to json_content so it's not empty
+        # Eigenmode frequency/Q data is in the .eig file
+        json_content["eigenmode_file"] = os.path.basename(eig_filename)
+        json_content["solution_type"] = "Eigenmode"
+        oDesktop.AddMessage("", "", 0, "Eigenmode data exported to {}".format(eig_filename))
+
     # Add integrals to result json file
     json_content.update(
         {

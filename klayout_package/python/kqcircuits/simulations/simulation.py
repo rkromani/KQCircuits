@@ -140,6 +140,54 @@ class Simulation:
     # Parameters
     box = Param(pdt.TypeShape, "Boundary box", pya.DBox(pya.DPoint(0, 0), pya.DPoint(10000, 10000)))
     ground_grid_box = Param(pdt.TypeShape, "Border", pya.DBox(pya.DPoint(0, 0), pya.DPoint(10000, 10000)))
+
+    # Auto box sizing parameters
+    auto_size_box = Param(
+        pdt.TypeBoolean,
+        "Automatically size simulation box based on geometry",
+        False,
+        docstring="If True and 'box' not explicitly provided, calculates box from "
+                  "element bounding box plus margin."
+    )
+    box_margin = Param(
+        pdt.TypeDouble,
+        "Margin around geometry when auto-sizing box",
+        500.0,
+        unit="µm",
+        docstring="Margin to add around element bbox in all directions. "
+                  "Can be a list [left, right, bottom, top] for asymmetric margins."
+    )
+    box_margin_x = Param(
+        pdt.TypeDouble,
+        "Horizontal margin (overrides box_margin if set)",
+        None,
+        unit="µm",
+        docstring="If set, overrides box_margin for left/right. "
+                  "Can be [left, right] for asymmetric."
+    )
+    box_margin_y = Param(
+        pdt.TypeDouble,
+        "Vertical margin (overrides box_margin if set)",
+        None,
+        unit="µm",
+        docstring="If set, overrides box_margin for bottom/top. "
+                  "Can be [bottom, top] for asymmetric."
+    )
+    box_round = Param(
+        pdt.TypeDouble,
+        "Round box dimensions to multiples of this value",
+        100.0,
+        unit="µm",
+        docstring="When auto-sizing, round coordinates to nearest multiple. "
+                  "Set to 0 to disable. Default 100 creates sizes like 500, 1000, 1500."
+    )
+    warn_box_too_small = Param(
+        pdt.TypeBoolean,
+        "Warn if manually specified box is smaller than geometry",
+        True,
+        docstring="Checks if manually-provided box contains geometry, warns if too small."
+    )
+
     with_grid = Param(pdt.TypeBoolean, "Make ground plane grid", False)
     name = Param(pdt.TypeString, "Name of the simulation", "Simulation")
 
@@ -325,8 +373,132 @@ class Simulation:
 
         self.layers = {}
         self.build()
+        self._auto_size_box_if_needed()
         self.create_simulation_layers()
         self.warn_of_small_shapes()
+
+    def _auto_size_box_if_needed(self):
+        """Auto-size box based on geometry if enabled, or check bounds if manual box.
+
+        Called after build() but before create_simulation_layers().
+        - If auto_size_box=True and box not provided: calculate from geometry
+        - If box provided and warn_box_too_small=True: check if geometry fits
+        """
+        # Detect if box was explicitly provided (differs from default)
+        schema = type(self).get_schema()
+        default_box = schema["box"].default
+        box_was_provided = self.box != default_box
+
+        if self.auto_size_box and not box_was_provided:
+            self._calculate_auto_box()
+        elif self.warn_box_too_small and box_was_provided:
+            self._check_box_bounds()
+
+    def _calculate_auto_box(self):
+        """Calculate and set box from cell geometry plus margins."""
+        cell_bbox = self.cell.dbbox()
+
+        if cell_bbox.empty():
+            logging.warning(
+                f"Simulation '{self.name}': auto_size_box enabled but cell has no geometry. "
+                f"Using default box."
+            )
+            return
+
+        # Parse margin parameters (handles scalar and list forms)
+        margins = self._parse_margins()
+        margin_left, margin_right, margin_bottom, margin_top = margins
+
+        # Enlarge by margins
+        box = pya.DBox(
+            pya.DPoint(cell_bbox.left - margin_left, cell_bbox.bottom - margin_bottom),
+            pya.DPoint(cell_bbox.right + margin_right, cell_bbox.top + margin_top)
+        )
+
+        # Round to grid if requested
+        if self.box_round > 0:
+            box.left = self._round_to_grid(box.left, self.box_round)
+            box.right = self._round_to_grid(box.right, self.box_round)
+            box.bottom = self._round_to_grid(box.bottom, self.box_round)
+            box.top = self._round_to_grid(box.top, self.box_round)
+
+        self.box = box
+
+        # Update ground_grid_box if it wasn't explicitly set differently
+        schema = type(self).get_schema()
+        if self.ground_grid_box == schema["ground_grid_box"].default:
+            self.ground_grid_box = box
+
+        logging.info(
+            f"Simulation '{self.name}': Auto-sized box to {box} "
+            f"(geometry bbox: {cell_bbox}, margins: {margins})"
+        )
+
+    def _parse_margins(self):
+        """Parse margin parameters into [left, right, bottom, top] values.
+
+        Returns:
+            tuple: (margin_left, margin_right, margin_bottom, margin_top) in µm
+        """
+        # Start with base margin (scalar or list)
+        if isinstance(self.box_margin, list):
+            if len(self.box_margin) == 4:
+                margin_left, margin_right, margin_bottom, margin_top = self.box_margin
+            elif len(self.box_margin) == 2:
+                margin_left = margin_right = self.box_margin[0]
+                margin_bottom = margin_top = self.box_margin[1]
+            else:
+                raise ValueError(
+                    f"box_margin list must have 2 or 4 elements, got {len(self.box_margin)}"
+                )
+        else:
+            margin_left = margin_right = margin_bottom = margin_top = self.box_margin
+
+        # Override with specific margins if provided
+        if self.box_margin_x is not None:
+            if isinstance(self.box_margin_x, list):
+                margin_left, margin_right = self.box_margin_x
+            else:
+                margin_left = margin_right = self.box_margin_x
+
+        if self.box_margin_y is not None:
+            if isinstance(self.box_margin_y, list):
+                margin_bottom, margin_top = self.box_margin_y
+            else:
+                margin_bottom = margin_top = self.box_margin_y
+
+        return margin_left, margin_right, margin_bottom, margin_top
+
+    def _round_to_grid(self, value, grid_size):
+        """Round value to nearest multiple of grid_size."""
+        return round(value / grid_size) * grid_size
+
+    def _check_box_bounds(self):
+        """Check if manually-specified box contains all geometry, warn if not."""
+        cell_bbox = self.cell.dbbox()
+
+        if cell_bbox.empty():
+            return
+
+        # Calculate how much geometry extends beyond each box edge (positive = overflow)
+        overflow = {
+            "left": max(0, self.box.left - cell_bbox.left),
+            "right": max(0, cell_bbox.right - self.box.right),
+            "bottom": max(0, self.box.bottom - cell_bbox.bottom),
+            "top": max(0, cell_bbox.top - self.box.top),
+        }
+
+        # Identify sides with overflow (geometry extends beyond box)
+        overflow_sides = [k for k, v in overflow.items() if v > 0]
+
+        if overflow_sides:
+            logging.warning(
+                f"Simulation '{self.name}': Geometry extends outside simulation box!\n"
+                f"  Simulation box: {self.box}\n"
+                f"  Geometry bbox: {cell_bbox}\n"
+                f"  Overflow: {', '.join(f'{k} by {overflow[k]:.1f} µm' for k in overflow_sides)}\n"
+                f"  Consider enlarging box or enabling auto_size_box=True."
+            )
 
     @classmethod
     def from_cell(cls, cell, margin=300, grid_size=1, **kwargs):

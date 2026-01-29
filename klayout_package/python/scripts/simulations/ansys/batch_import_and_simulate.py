@@ -110,3 +110,7 @@ for i, jsonfile in enumerate(json_files):
 print("\n" + "="*60)
 print("All {} simulations complete!".format(len(json_files)))
 print("="*60)
+
+# Close ANSYS Desktop to allow post-processing scripts to run
+print("Closing ANSYS Desktop...")
+oDesktop.QuitApplication()

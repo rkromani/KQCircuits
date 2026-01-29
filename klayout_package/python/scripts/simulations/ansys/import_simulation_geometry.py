@@ -380,8 +380,8 @@ if ansys_tool in hfss_tools:
                         ]
                     )
 
-                # Create ANSYS variable for resistance if non-default
-                if port.get("resistance", 50) != 50:
+                # Create ANSYS variable for resistance if non-zero
+                if port.get("resistance", 0) != 0:
                     oDesign.ChangeProperty(
                         [
                             "NAME:AllTabs",
@@ -452,8 +452,9 @@ if ansys_tool in hfss_tools:
                 else:
                     rlc_params.extend(["UseCap:=", False])
 
-                # Add resistance if specified
-                if port.get("resistance", 50) != 50:
+                # Add resistance if specified and non-zero
+                # Note: 0 ohm resistance creates short circuit causing numerical issues
+                if port.get("resistance", 0) != 0:
                     rlc_params.extend([
                         "UseResist:=",
                         True,

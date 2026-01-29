@@ -164,7 +164,7 @@ export_parameters = {
     "min_frequency": 1,  # Minimum frequency in GHz
     "max_delta_f": 0.3,  # Convergence criterion: max frequency change (%)
     "maximum_passes": 20,
-    "minimum_converged_passes": 2,
+    "minimum_converged_passes": 1,
 
     # Custom mesh refinement for accurate results
     "mesh_size": {
@@ -187,7 +187,7 @@ import json
 sweep_params = {
     # Example sweeps - adjust based on what you want to study
     #"finger_number": [25, 50],
-    "cap_lumped_value": [100, 150, 200],
+    "cap_lumped_value": [5000, 10000, 20000, 50000],
 }
 
 # Apply sweep overrides if provided

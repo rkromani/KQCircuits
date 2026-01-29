@@ -308,7 +308,10 @@ def plot_q3d_results(sweep_path, x_values, sim_data, param_name, design, timesta
 
 
 def plot_eigenmode_results(sweep_path, x_values, sim_data, param_name, design, timestamp, sample_results):
-    """Generate plots for eigenmode simulations (resonant frequency)."""
+    """Generate plots for eigenmode simulations (resonant frequency and Q factor).
+
+    Creates separate plots for each mode's frequency and Q factor.
+    """
     plots_folder = sweep_path / 'plots'
     plots_folder.mkdir(exist_ok=True)
 
@@ -319,20 +322,32 @@ def plot_eigenmode_results(sweep_path, x_values, sim_data, param_name, design, t
     except:
         timestamp_str = timestamp
 
-    # Look for frequency results
-    freq_keys = [k for k in sample_results.keys() if 'frequency' in k.lower() or 'freq' in k.lower()]
+    # Find all frequency and Q factor keys
+    freq_keys = [k for k in sample_results.keys() if k.startswith('frequency_mode_')]
+    q_keys = [k for k in sample_results.keys() if k.startswith('Q_mode_')]
 
-    if freq_keys:
+    # Helper function to plot individual mode data
+    def plot_single_mode(key, y_label, unit, filename_prefix):
+        """Create a plot for a single eigenmode parameter."""
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        for key in freq_keys:
-            y_values = [d['results'].get(key, 0) for d in sim_data]
-            label = key.replace('_', ' ').title()
-            ax.plot(x_values, y_values, 'o-', linewidth=2, markersize=8, label=label)
+        # Get y-values
+        y_values = np.array([d['results'].get(key, 0) for d in sim_data])
 
+        # Extract mode number from key (e.g., "frequency_mode_1" -> "1")
+        mode_num = key.split('_')[-1]
+
+        # Create label
+        label = f'{y_label} (Mode {mode_num})'
+
+        # Plot
+        ax.plot(x_values, y_values, 'o-', linewidth=2, markersize=8, label=label)
+
+        # Format plot
         ax.set_xlabel(param_name.replace('_', ' ').title(), fontsize=12)
-        ax.set_ylabel('Frequency (GHz)', fontsize=12)
-        ax.set_title(f'Resonant Frequency vs {param_name.replace("_", " ").title()}\n{design}', fontsize=14)
+        ax.set_ylabel(f'{y_label} ({unit})' if unit else y_label, fontsize=12)
+        ax.set_title(f'{y_label} (Mode {mode_num}) vs {param_name.replace("_", " ").title()}\n{design}',
+                    fontsize=14)
         ax.legend()
         ax.grid(True, alpha=0.3)
 
@@ -342,8 +357,82 @@ def plot_eigenmode_results(sweep_path, x_values, sim_data, param_name, design, t
                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
 
         plt.tight_layout()
-        plt.savefig(plots_folder / 'frequency.png', dpi=150)
+
+        # Save with descriptive filename
+        filename = f'{filename_prefix}_mode_{mode_num}.png'
+        plt.savefig(plots_folder / filename, dpi=150)
         plt.close()
+
+    # Plot each mode's frequency
+    for freq_key in freq_keys:
+        plot_single_mode(freq_key, 'Frequency', 'GHz', 'frequency')
+
+    # Plot each mode's Q factor
+    for q_key in q_keys:
+        # Only plot if Q > 0 (Q=0 means lossless simulation)
+        y_values = np.array([d['results'].get(q_key, 0) for d in sim_data])
+        if np.any(y_values > 0):
+            plot_single_mode(q_key, 'Q Factor', '', 'Q_factor')
+
+    # Create combined frequency plot if multiple modes exist
+    if len(freq_keys) > 1:
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for key in freq_keys:
+            y_values = [d['results'].get(key, 0) for d in sim_data]
+            mode_num = key.split('_')[-1]
+            label = f'Mode {mode_num}'
+            ax.plot(x_values, y_values, 'o-', linewidth=2, markersize=8, label=label)
+
+        ax.set_xlabel(param_name.replace('_', ' ').title(), fontsize=12)
+        ax.set_ylabel('Frequency (GHz)', fontsize=12)
+        ax.set_title(f'Resonant Frequencies vs {param_name.replace("_", " ").title()}\n{design}', fontsize=14)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        # Add timestamp annotation
+        ax.text(0.02, 0.98, f'Sweep: {timestamp_str}',
+               transform=ax.transAxes, fontsize=8, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+
+        plt.tight_layout()
+        plt.savefig(plots_folder / 'frequency_all_modes.png', dpi=150)
+        plt.close()
+
+    # Create combined Q factor plot if multiple modes exist and Q > 0
+    if len(q_keys) > 1:
+        # Check if any Q values are non-zero
+        has_nonzero_q = False
+        for q_key in q_keys:
+            y_values = np.array([d['results'].get(q_key, 0) for d in sim_data])
+            if np.any(y_values > 0):
+                has_nonzero_q = True
+                break
+
+        if has_nonzero_q:
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            for key in q_keys:
+                y_values = np.array([d['results'].get(key, 0) for d in sim_data])
+                if np.any(y_values > 0):  # Only plot if Q > 0
+                    mode_num = key.split('_')[-1]
+                    label = f'Mode {mode_num}'
+                    ax.plot(x_values, y_values, 'o-', linewidth=2, markersize=8, label=label)
+
+            ax.set_xlabel(param_name.replace('_', ' ').title(), fontsize=12)
+            ax.set_ylabel('Q Factor', fontsize=12)
+            ax.set_title(f'Quality Factors vs {param_name.replace("_", " ").title()}\n{design}', fontsize=14)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+
+            # Add timestamp annotation
+            ax.text(0.02, 0.98, f'Sweep: {timestamp_str}',
+                   transform=ax.transAxes, fontsize=8, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+
+            plt.tight_layout()
+            plt.savefig(plots_folder / 'Q_factor_all_modes.png', dpi=150)
+            plt.close()
 
 
 def plot_hfss_results(sweep_path, x_values, sim_data, param_name, design, timestamp, sample_results):
