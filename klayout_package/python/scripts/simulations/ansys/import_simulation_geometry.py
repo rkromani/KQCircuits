@@ -228,19 +228,40 @@ if ansys_tool in hfss_tools:
         is_wave_port = port["type"] == "EdgePort"
 
         # Check if this is a lumped element (doesn't need polygon)
-        is_lumped = port.get("junction", False) or port.get("lumped_element", False)
+        is_lumped = port.get("lumped_element", False)  # Only use lumped_element flag, not junction
+        is_junction = port.get("junction", False)
 
         if not is_wave_port or not ansys_project_template:
-            # Lumped elements don't need polygon geometry - they use imported layer objects
+            # Lumped elements use imported layer objects; junctions can use AlOx face or polygon
             if not is_lumped:
                 if "polygon" not in port:
                     continue
 
                 polyname = "Port%d" % port["number"]
 
-                # Create polygon spanning the two edges
-                create_polygon(oEditor, polyname, [list(p) for p in port["polygon"]], units)
-                set_color(oEditor, [polyname], 240, 180, 180, 0.8)
+                # If this is a junction with a polygon, try to use AlOx layer face instead
+                if is_junction:
+                    # For junction ports, create a vertical sheet directly from polygon coordinates
+                    # This is simpler and more reliable than trying to extract faces from AlOx object
+                    polyname = "Port%d_Junction" % port["number"]
+
+                    # Create a vertical polygon sheet from the provided polygon coordinates
+                    oDesktop.AddMessage("", "", 0, "Port %d: Creating vertical junction sheet from polygon" % port["number"])
+                    create_polygon(oEditor, polyname, [list(p) for p in port["polygon"]], units)
+                    set_color(oEditor, [polyname], 240, 180, 180, 0.8)
+
+                    # The signal/ground locations from port data should already be correct
+                    # They define the vertical current line through the polygon
+                    oDesktop.AddMessage("", "", 0, "Port %d: Using signal location (%.6f, %.6f, %.6f)" %
+                                       (port["number"], port["signal_location"][0],
+                                        port["signal_location"][1], port["signal_location"][2]))
+                    oDesktop.AddMessage("", "", 0, "Port %d: Using ground location (%.6f, %.6f, %.6f)" %
+                                       (port["number"], port["ground_location"][0],
+                                        port["ground_location"][1], port["ground_location"][2]))
+                else:
+                    # Regular port, create polygon normally
+                    create_polygon(oEditor, polyname, [list(p) for p in port["polygon"]], units)
+                    set_color(oEditor, [polyname], 240, 180, 180, 0.8)
             else:
                 # For lumped elements, use objects from lumped_rlc layer instead of creating polygon
                 # Find the lumped_rlc layer objects to use as boundary geometry
@@ -563,24 +584,108 @@ elif ansys_tool == "q3d":
     # Check if this is an ACRL simulation (needs conductor as SignalNet, not ground)
     # solve_acrl is now defined globally at the top of the script
 
-    excitations = {d["excitation"] for d in metal_layers.values()}
-    for excitation in excitations:
-        objs = [o for n, d in metal_layers.items() if d["excitation"] == excitation for o in objects[n]]
-        if not objs:
-            continue
-        # For ACRL simulations with ports, treat excitation==0 as Net1 (SignalNet) instead of ground
-        # This allows ACRL source/sink assignment on the main conductor
-        if excitation == 0 and solve_acrl and len(data.get("ports", [])) > 0:
-            oBoundarySetup.AssignSignalNet(["NAME:Net1", "Objects:=", objs])
-        elif excitation == 0:
-            for i, obj in enumerate(objs):
-                oBoundarySetup.AssignGroundNet(["NAME:Ground{}".format(i + 1), "Objects:=", [obj]])
-        elif excitation > len(data["ports"]) and data.get("use_floating_islands", False):
-            oBoundarySetup.AssignFloatingNet(["NAME:Floating{}".format(excitation), "Objects:=", objs])
-        else:
-            oBoundarySetup.AssignSignalNet(["NAME:Net{}".format(excitation), "Objects:=", objs])
+    # For ACRL simulations with internal ports, handle specially
+    if solve_acrl and len(data.get("ports", [])) > 0:
+        # Use layer excitations to separate into nets
+        # Map excitation values to net numbers to align with port expectations:
+        # excitation=1 (typically signal layer) -> Net1 (port 1)
+        # excitation=0 (typically ground layer) -> Net2 (port 2)
+        for layer_name, layer_data in metal_layers.items():
+            excitation = layer_data.get("excitation", 0)
+            objs = objects[layer_name]
+            if objs:
+                # For ACRL, treat both signal and ground layers as signal nets
+                # Check if port has a custom net_name first
+                ports = data.get("ports", [])
+                custom_net_name = None
+                for port in ports:
+                    if port.get("number") == excitation and "net_name" in port:
+                        custom_net_name = port["net_name"]
+                        break
+
+                if custom_net_name:
+                    net_name = custom_net_name
+                else:
+                    # Default mapping: excitation N -> Net(N+1), but swap 0 and 1
+                    if excitation == 1:
+                        net_name = "Net1"
+                    elif excitation == 0:
+                        net_name = "Net2"
+                    else:
+                        net_name = "Net{}".format(excitation + 1)
+                oBoundarySetup.AssignSignalNet(["NAME:{}".format(net_name), "Objects:=", objs])
+                oDesktop.AddMessage("", "", 0, "DEBUG: Assigned {} objects from {} (excitation={}) to {}".format(
+                    len(objs), layer_name, excitation, net_name))
+    else:
+        # Non-ACRL Q3D: Assign nets based on layer excitations
+        excitations = {d["excitation"] for d in metal_layers.values()}
+        for excitation in excitations:
+            objs = [o for n, d in metal_layers.items() if d["excitation"] == excitation for o in objects[n]]
+            if not objs:
+                continue
+            if excitation == 0:
+                # Assign all ground objects to a single ground net named "ground"
+                if objs:
+                    oBoundarySetup.AssignGroundNet(["NAME:ground", "Objects:=", objs])
+            elif excitation > len(data["ports"]) and data.get("use_floating_islands", False):
+                oBoundarySetup.AssignFloatingNet(["NAME:Floating{}".format(excitation), "Objects:=", objs])
+            else:
+                # Check if port has a custom net_name
+                net_name = "Net{}".format(excitation)  # Default name
+                ports = data.get("ports", [])
+                for port in ports:
+                    if port.get("number") == excitation and "net_name" in port:
+                        net_name = port["net_name"]
+                        break
+                oBoundarySetup.AssignSignalNet(["NAME:{}".format(net_name), "Objects:=", objs])
     oBoundarySetup.AutoIdentifyNets()  # Combine Nets by conductor connections. Order: GroundNet, SignalNet, FloatingNet
 
+    # For ACRL: Build mapping from port numbers to actual net names
+    # Map based on layer excitations (not array index, since GetExcitations order is unpredictable)
+    port_to_net_map = {}
+    if ansys_tool == "q3d" and solve_acrl and len(data.get("ports", [])) > 0:
+        try:
+            ports = data.get("ports", [])
+
+            # Get current net assignments after AutoIdentifyNets
+            excitations = oBoundarySetup.GetExcitations()
+            current_nets = excitations[::2]
+            net_types = excitations[1::2]
+
+            oDesktop.AddMessage("", "", 0, "DEBUG: After AutoIdentifyNets, nets are: {}".format(current_nets))
+
+            # Map ports to nets based on excitation values
+            # Port number corresponds to layer excitation value
+            # Excitation-to-net mapping: excitation=1 -> Net1, excitation=0 -> Net2, excitation=N (N>1) -> Net(N+1)
+            for port in ports:
+                port_num = port.get("number")
+                if port_num:
+                    # Port number equals layer excitation value
+                    excitation = port_num
+                    # Apply same mapping formula as lines 609-615
+                    if excitation == 1:
+                        actual_net_name = "Net1"
+                    elif excitation == 0:
+                        actual_net_name = "Net2"
+                    else:
+                        actual_net_name = "Net{}".format(excitation + 1)
+
+                    port_to_net_map[str(port_num)] = actual_net_name
+                    oDesktop.AddMessage("", "", 0, "DEBUG: Port {} (excitation={}) mapped to net '{}'".format(port_num, excitation, actual_net_name))
+        except Exception as e:
+            oDesktop.AddMessage("", "", 2, "Warning: Error mapping ports to nets: {}".format(str(e)))
+
+    # Debug: Print nets after AutoIdentifyNets for ACRL
+    if ansys_tool == "q3d" and solve_acrl:
+        try:
+            excitations = oBoundarySetup.GetExcitations()
+            nets = excitations[::2]
+            net_types = excitations[1::2]
+            oDesktop.AddMessage("", "", 0, "DEBUG: After AutoIdentifyNets, found {} nets".format(len(nets)))
+            for net_name, net_type in zip(nets, net_types):
+                oDesktop.AddMessage("", "", 0, "DEBUG: Net '{}' type={}".format(net_name, net_type))
+        except Exception as e:
+            oDesktop.AddMessage("", "", 2, "DEBUG: Error getting nets: {}".format(str(e)))
 
 # Add field calculations
 if data.get("integrate_energies", False) and ansys_tool in hfss_tools:
@@ -935,13 +1040,20 @@ if not ansys_project_template:
                 # Check if using numbered format (new): {1: {"source": [...], "sink": [...]}, 2: {...}}
                 if acrl_locs and isinstance(acrl_locs.get(next(iter(acrl_locs.keys()), 1)), dict):
                     # Numbered format - create source/sink for each numbered inductor
+                    # Use port_to_net_map to find actual net names after AutoIdentifyNets
                     acrl_sources = {}
                     for num, locs in acrl_locs.items():
                         if "source" in locs and "sink" in locs:
-                            acrl_sources["Net{}".format(num)] = {
-                                "source_location": locs["source"],
-                                "sink_location": locs["sink"],
-                            }
+                            # Find the actual net name for this port number
+                            actual_net_name = port_to_net_map.get(str(num))
+                            if actual_net_name:
+                                acrl_sources[actual_net_name] = {
+                                    "source_location": locs["source"],
+                                    "sink_location": locs["sink"],
+                                }
+                                oDesktop.AddMessage("", "", 0, "DEBUG: Creating ACRL source/sink for net '{}' (port {})".format(actual_net_name, num))
+                            else:
+                                oDesktop.AddMessage("", "", 2, "Warning: Could not find net for port {}".format(num))
                 # Check if using legacy format (old): {"source": [...], "sink": [...]}
                 elif "source" in acrl_locs and "sink" in acrl_locs:
                     acrl_sources = {
@@ -970,11 +1082,16 @@ if not ansys_project_template:
                     nets = excitations[::2]
                     net_types = excitations[1::2]
 
+                    # Debug: Show what nets were found and what we're looking for
+                    oDesktop.AddMessage("", "", 0, "DEBUG ACRL: Found {} nets: {}".format(len(nets), nets))
+                    oDesktop.AddMessage("", "", 0, "DEBUG ACRL: Looking for sources in: {}".format(list(acrl_sources.keys())))
+
                     # Helper function to find edge nearest to a location on a specific net
                     def find_nearest_edge(target_location, net_name, tolerance=1e-3):
                         """Find edge ID closest to target location [x, y, z] on objects belonging to net_name"""
                         best_edge = None
                         best_distance = float('inf')
+                        candidates = []  # Track top candidates for diagnostics
 
                         # Get objects assigned to this net
                         try:
@@ -985,6 +1102,9 @@ if not ansys_project_template:
                         except:
                             # Fallback: just use metal_sheets
                             obj_names = metal_sheets
+
+                        oDesktop.AddMessage("", "", 0, "  DEBUG: Searching for edge near {} in net {}".format(target_location, net_name))
+                        oDesktop.AddMessage("", "", 0, "  DEBUG: Checking {} objects: {}".format(len(obj_names), obj_names))
 
                         for obj_name in obj_names:
                             try:
@@ -1023,6 +1143,12 @@ if not ansys_project_template:
                                             dz = edge_center[2] - target_3d[2]
                                             distance = (dx**2 + dy**2 + dz**2)**0.5
 
+                                            # Track candidates for diagnostics (keep top 5)
+                                            candidates.append((distance, edge_id, edge_center, obj_name))
+                                            candidates.sort(key=lambda x: x[0])
+                                            if len(candidates) > 5:
+                                                candidates = candidates[:5]
+
                                             if distance < best_distance:
                                                 best_distance = distance
                                                 best_edge = edge_id
@@ -1030,6 +1156,17 @@ if not ansys_project_template:
                                         pass
                             except:
                                 pass
+
+                        # Show top candidates for diagnostics
+                        oDesktop.AddMessage("", "", 0, "  DEBUG: Top 5 candidate edges:")
+                        for i, (dist, eid, center, obj) in enumerate(candidates[:5]):
+                            oDesktop.AddMessage("", "", 0, "    {}. Edge {} on '{}' at {} (dist={:.3f})".format(
+                                i+1, eid, obj, center, dist))
+
+                        if best_edge:
+                            oDesktop.AddMessage("", "", 0, "  DEBUG: Selected edge {} (distance={:.3f})".format(best_edge, best_distance))
+                        else:
+                            oDesktop.AddMessage("", "", 2, "  WARNING: No edge found!")
 
                         return best_edge, best_distance
 
@@ -1042,11 +1179,18 @@ if not ansys_project_template:
 
                             if source_loc and sink_loc:
                                 try:
+                                    oDesktop.AddMessage("", "", 0, "DEBUG: Finding edges for net '{}'".format(net_name))
+                                    oDesktop.AddMessage("", "", 0, "  Source location: {}".format(source_loc))
+                                    oDesktop.AddMessage("", "", 0, "  Sink location: {}".format(sink_loc))
+
                                     # Find edges nearest to specified locations on metal conductor objects only
                                     source_edge_id, source_dist = find_nearest_edge(source_loc, net_name)
                                     sink_edge_id, sink_dist = find_nearest_edge(sink_loc, net_name)
 
                                     if source_edge_id and sink_edge_id:
+                                        oDesktop.AddMessage("", "", 0, "DEBUG: Assigning to net '{}'".format(net_name))
+                                        oDesktop.AddMessage("", "", 0, "  Source edge: {} (dist={:.3f})".format(source_edge_id, source_dist))
+                                        oDesktop.AddMessage("", "", 0, "  Sink edge: {} (dist={:.3f})".format(sink_edge_id, sink_dist))
                                         # Assign source
                                         oBoundarySetup.AssignSource(
                                             [

@@ -1024,6 +1024,78 @@ class Simulation:
                     element_layer_idx = self.get_layer("lumped_rlc", face_id)
                     self.cell.shapes(element_layer_idx).clear()
 
+                # Insert 3D junction stack layers (Al-AlOx-Al) for junction simulations
+                # Enabled via use_sis_junction_stack parameter (default: False)
+                # Layer thicknesses configurable via sis_junction_thickness dict
+                use_sis_stack = getattr(self, 'use_sis_junction_stack', False)
+                if use_sis_stack:
+                    # Get layer thicknesses from parameter (µm)
+                    # Default values: 100nm Al, 2nm AlOx, 100nm Al
+                    sis_thickness = getattr(self, 'sis_junction_thickness', None) or {}
+                    bottom_al_thickness = sis_thickness.get('bottom_al', 0.1)
+                    alox_thickness = sis_thickness.get('alox', 0.002)
+                    top_al_thickness = sis_thickness.get('top_al', 0.1)
+
+                    # Get materials (allow override)
+                    sis_materials = getattr(self, 'sis_junction_materials', None) or {}
+                    bottom_al_material = sis_materials.get('bottom_al', 'pec')
+                    alox_material = sis_materials.get('alox', 'sapphire')
+                    top_al_material = sis_materials.get('top_al', 'pec')
+
+                    # Extract SIS layer regions
+                    sis_junction_region = (
+                        self.simplified_region(self.region_from_layer(face_id, "SIS_junction")) & face_box_region
+                    )
+                    sis_shadow_region = (
+                        self.simplified_region(self.region_from_layer(face_id, "SIS_shadow")) & face_box_region
+                    )
+                    sis_junction_2_region = (
+                        self.simplified_region(self.region_from_layer(face_id, "SIS_junction_2")) & face_box_region
+                    )
+
+                    # Calculate z-positions from thicknesses (stacked from base conductor surface)
+                    base_z = z[face_id][0]
+                    z_bottom_al_bottom = base_z
+                    z_bottom_al_top = z_bottom_al_bottom + bottom_al_thickness
+                    z_alox_top = z_bottom_al_top + alox_thickness
+                    z_top_al_top = z_alox_top + top_al_thickness
+
+                    # Insert bottom Al electrode
+                    if not sis_junction_region.is_empty():
+                        self.insert_layer(
+                            f"{face_id}_SIS_junction",
+                            sis_junction_region,
+                            z_bottom_al_bottom,
+                            z_bottom_al_top,
+                            material=bottom_al_material,
+                        )
+                        element_layer_idx = self.get_layer("SIS_junction", face_id)
+                        self.cell.shapes(element_layer_idx).clear()
+
+                    # Insert junction oxide (AlOx or other dielectric)
+                    if not sis_shadow_region.is_empty():
+                        self.insert_layer(
+                            f"{face_id}_SIS_shadow",
+                            sis_shadow_region,
+                            z_bottom_al_top,
+                            z_alox_top,
+                            material=alox_material,
+                        )
+                        element_layer_idx = self.get_layer("SIS_shadow", face_id)
+                        self.cell.shapes(element_layer_idx).clear()
+
+                    # Insert top Al electrode
+                    if not sis_junction_2_region.is_empty():
+                        self.insert_layer(
+                            f"{face_id}_SIS_junction_2",
+                            sis_junction_2_region,
+                            z_alox_top,
+                            z_top_al_top,
+                            material=top_al_material,
+                        )
+                        element_layer_idx = self.get_layer("SIS_junction_2", face_id)
+                        self.cell.shapes(element_layer_idx).clear()
+
             self.insert_stacked_up_layers(stack, z[i + 1])
 
             # Rest of the features are not available with multilayer stack-up

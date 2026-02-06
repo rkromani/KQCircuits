@@ -32,7 +32,7 @@ from kqcircuits.elements.hanger_resonator import HangerResonator
 from kqcircuits.elements.resonator_spike import ResonatorSpike
 from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
 
-@add_parameters_from(Element, b = 4.6, a = 10, margin=100)
+@add_parameters_from(Element, b = 5.85, a = 10, margin=100)
 @add_parameters_from(ResonatorSpike)
 @add_parameters_from(FingerCapacitorGroundV3)
 #@add_parameters_from(ChipFrame, box = pya.DBox(pya.DPoint(0, 0), pya.DPoint(7500, 7500)))

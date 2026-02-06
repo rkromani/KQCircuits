@@ -31,22 +31,23 @@ import numpy as np
 class ResonatorSpike(Element):
 
     feedline_length = Param(pdt.TypeDouble, "Feedline length", 700, unit="μm")
-    feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 10, unit="μm")
+    feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 5, unit="μm")
     feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
     feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", True)
 
+    l_length = Param(pdt.TypeDouble, "Inductor length", 4000, unit="μm")
     l_width = Param(pdt.TypeDouble, "Inductor width", 3, unit="μm")
-    l_coupling_length = Param(pdt.TypeDouble, "Inductor coupling length", 250, unit="μm")
+    l_coupling_length = Param(pdt.TypeDouble, "Inductor coupling length", 500, unit="μm")
     l_coupling_distance = Param(pdt.TypeDouble, "Inductor coupling distance", 16, unit="μm")
-    l_height = Param(pdt.TypeDouble, "Inductor height", 2000, unit="μm")
+    #l_height = Param(pdt.TypeDouble, "Inductor height", 1800, unit="μm")
     l_radius = Param(pdt.TypeDouble, "Inductor turn radius", 25, unit="μm")
-    l_ground_gap = Param(pdt.TypeDouble, "Inductor ground gap", 120, unit="μm")
+    l_ground_gap = Param(pdt.TypeDouble, "Inductor ground gap", 80, unit="μm")
     l_grounding_distance = Param(pdt.TypeDouble, "Inductor grounding distance from side of capacitor", 20, unit="μm")
     l_junction_width = Param(pdt.TypeDouble, "Width of inductor above end box used for coupling junction", 15, unit="μm")
     l_junction_spacing = Param(pdt.TypeDouble, "Spacing between top of capacitor ground and junction", 15, unit="μm")
 
     end_box_width = Param(pdt.TypeDouble, "End box width", 20, unit="μm")
-    end_box_height = Param(pdt.TypeDouble, "End box height", 850, unit="μm")
+    end_box_height = Param(pdt.TypeDouble, "End box height", 60, unit="μm")
     end_box_spacing = Param(pdt.TypeDouble, "End box spacing from bottom of ground gap box", 20, unit="μm")
 
     t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 3, unit="μm")
@@ -56,13 +57,13 @@ class ResonatorSpike(Element):
     t_cut_radius = Param(pdt.TypeDouble, "Radius of T-cut corners", 2, unit="μm")
     t_cut_number = Param(pdt.TypeInt, "Number of T-cuts", 1)
     
-    spike_height = Param(pdt.TypeDouble, "Spike height", 2, unit="μm")
-    spike_gap = Param(pdt.TypeDouble, "Spike gap", 0.1, unit="μm")
+    spike_height = Param(pdt.TypeDouble, "Spike height", 1.5, unit="μm")
+    spike_gap = Param(pdt.TypeDouble, "Spike gap", 0.0, unit="μm")
     spike_base_width = Param(pdt.TypeDouble, "Spike base width", 2, unit="μm")
     spike_base_height = Param(pdt.TypeDouble, "Spike base height", 10, unit="μm")
     spike_number = Param(pdt.TypeInt, "Number of spikes", 0)
 
-    junction_bool = Param(pdt.TypeBoolean, "Whether to add junction", True)
+    junction_bool = Param(pdt.TypeBoolean, "Whether to add junction", False)
     #total_junction_height = Param(pdt.TypeDouble, "Total junction height", 20, unit="μm", readonly=True)
     junction_pad_height = Param(pdt.TypeDouble, "Junction pad height", 10, unit="μm")
     junction_finger_length = Param(pdt.TypeDouble, "Length of junction finger", 5, unit="μm")
@@ -88,13 +89,17 @@ class ResonatorSpike(Element):
 
     def build(self):
 
+        self.spike_region_width = self.spike_height * 2 + self.spike_gap #+ self.angle_evap_offset
+        self.end_box_half_width = 1.5 * self.end_box_width + self.spike_region_width
+        self.end_box_tot_height = self.end_box_height + self.end_box_spacing
+        self.l_height = 0.5 * (self.l_length - 2*self.l_coupling_length - 2*self.l_radius*(np.pi - 1) + self.end_box_half_width + self.end_box_tot_height - self.l_grounding_distance)
+
         self.angle_evap_offset = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_1)) - np.sin(np.radians(self.shadow_angle_2)))
         self.angle_evap_offset_l = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_2)))
         self.angle_evap_offset_r = self.resist_thickness * (np.sin(np.radians(self.shadow_angle_1)))
         #self.end_box_height = self.spike_base_width*self.spike_number + 2 * self.end_box_buffer
         #distance between end of end box and spikes
         self.end_box_buffer = (self.end_box_height - self.spike_base_width*self.spike_number)/2
-        self.spike_region_width = self.spike_height * 2 + self.spike_gap #+ self.angle_evap_offset
         self.spike_region_length = self.spike_number * self.spike_base_width
 
         self.ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing + self.b + self.a/2)
@@ -179,6 +184,8 @@ class ResonatorSpike(Element):
         # add reference point
         self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
         self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
+        self.refpoints["feedline_a"] = pya.DPoint(-self.feedline_length/2, 0)
+        self.refpoints["feedline_b"] = pya.DPoint(self.feedline_length/2, 0)
         self.refpoints["inductor_ground"] = pya.DPoint(self.end_box_far_left - self.l_grounding_distance, self.ground_gap_bottom)
 
         # Add named ACRL source/sink refpoints for Q3D inductance measurements

@@ -40,9 +40,11 @@ class METCPW(Element):
     cpw_coupling_length = Param(pdt.TypeDouble, "Length of CPW coupling region", 250, unit="μm")
     cpw_coupling_distance = Param(pdt.TypeDouble, "Distance between CPW resonator and feedline", 5, unit="μm")
     cpw_fold_length = Param(pdt.TypeDouble, "Length of CPW folds region", 500, unit="μm")
+    cpw_end_length = Param(pdt.TypeDouble, "Length of CPW end region", 50, unit="μm")
     cpw_radius = Param(pdt.TypeDouble, "Radius of CPW bends", 50, unit="μm")
     cpw_a = Param(pdt.TypeDouble, "CPW center conductor width (a)", 10, unit="μm")
     cpw_b = Param(pdt.TypeDouble, "CPW gap width (b)", 4.5, unit="μm")
+    cpw_cutout_bool = Param(pdt.TypeBoolean, "Whether to add cpw cutout", False)
 
     gap_width = Param(pdt.TypeDouble, "Width of gap around MET", 40, unit="μm")
     gap_finger = Param(pdt.TypeDouble, "Length of finger leading to MET", 15, unit="μm")
@@ -56,21 +58,28 @@ class METCPW(Element):
     coupler_height = Param(pdt.TypeDouble, "Height of coupler junction", 3, unit="μm") #post undercut
 
     al_undercut = Param(pdt.TypeDouble, "Aluminum undercut length", 1.5, unit="μm") # undercut distance
-    ta_undercut = Param(pdt.TypeDouble, "Tantalum undercut length", 0.5, unit="μm") # undercut distance
+    ta_undercut = Param(pdt.TypeDouble, "Tantalum undercut length", 0.25, unit="μm") # undercut distance
 
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", False)
+
+    use_cpw_resonator_stub = Param(pdt.TypeBoolean, "Add CPW resonator stub for zoomed sims", False)
 
     n = Param(pdt.TypeInt, "Number of points for rounding", 64)
 
     def build(self):
 
-        self.cpw_n_folds = math.floor((self.cpw_length - self.cpw_coupling_length - 3 * self.cpw_radius * np.pi/2) / ((np.pi * self.cpw_radius + self.cpw_fold_length )))
-        self.cpw_extra_length = self.cpw_length - self.cpw_n_folds * (np.pi * self.cpw_radius + self.cpw_fold_length )
-        self.cpw_end_x = self.cpw_coupling_length/2 + self.cpw_radius + self.cpw_n_folds * 2 * self.cpw_radius
-        self.cpw_end_y = self.a/2 + self.b + self.cpw_coupling_distance + self.cpw_b + self.cpw_a/2 + self.cpw_extra_length
-        self.cpw_end_y = -self.cpw_end_y
+        self.cpw_feedline_center_y = -(self.a/2 + self.b + self.cpw_coupling_distance + self.cpw_b + self.cpw_a/2)
+
+        self.cpw_n_folds = math.floor((self.cpw_length - self.cpw_coupling_length - self.cpw_end_length - 4 * self.cpw_radius * np.pi/2) / ((np.pi * self.cpw_radius + self.cpw_fold_length )))
+        self.cpw_extra_length = self.cpw_length - self.cpw_end_length - self.cpw_n_folds * (np.pi * self.cpw_radius + self.cpw_fold_length )
+        self.cpw_end_x = self.cpw_coupling_length/2 + self.cpw_radius + self.cpw_n_folds * 2 * self.cpw_radius + self.cpw_end_length + self.cpw_radius
+        self.cpw_end_y = self.cpw_feedline_center_y - self.cpw_extra_length + self.cpw_radius
         if self.cpw_n_folds % 2 == 0:
-            self.cpw_end_y -= self.cpw_fold_length
+            self.cpw_end_y -= self.cpw_fold_length 
+            self.cpw_end_y -= 2 * self.cpw_radius
+
+        self.met_center_x = self.cpw_end_x + self.met_bridge_length + self.met_height/2
+        self.met_center_y = self.cpw_end_y
 
         feedline_region = self._make_feedline()
         cpw_region = self._make_cpw_region()
@@ -78,37 +87,82 @@ class METCPW(Element):
         met_gap_region = self._get_met_gap_region()
         top_electrode_region = self._make_top_electrode()
         aluminum_region = self._make_al_region(top_electrode_region)
-        bottom_electrode_region = self._make_bottom_electrode(top_electrode_region)
-
-        self.cell.shapes(self.get_layer("airbridge_flyover")).insert(top_electrode_region)
+        bottom_electrode_region = self._make_bottom_electrode(aluminum_region)
+        
+        if not self.cpw_cutout_bool:
+            self.cell.shapes(self.get_layer("airbridge_flyover")).insert(top_electrode_region)
         self.cell.shapes(self.get_layer("SIS_junction")).insert(aluminum_region)
-
+        self.cell.shapes(self.get_layer("SIS_shadow")).insert(aluminum_region)
+        self.cell.shapes(self.get_layer("SIS_junction_2")).insert(aluminum_region)
+        
+        self.cell.shapes(self.get_layer("base_metal_gap")).insert(
+            bottom_electrode_region
+        )
         self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
             feedline_region + cpw_region + met_gap_region - bottom_electrode_region
 
         )
 
+        # Add junction refpoints for simulation
+        # These mark the junction center location for RLC boundary creation
+        self.refpoints["junction_signal"] = pya.DPoint(
+            self.met_center_x + self.met_height/2,  # Right side of junction
+            self.met_center_y
+        )
+        self.refpoints["junction_ground"] = pya.DPoint(
+            self.met_center_x - self.met_height/2,  # Left side of junction
+            self.met_center_y
+        )
+
+        # Add coupler junction refpoints for simulation
+        self.refpoints["coupler_signal"] = pya.DPoint(
+            self.cpw_end_x + self.coupler_width/2,  # Right side of coupler junction
+            self.cpw_end_y
+        )
+        self.refpoints["coupler_ground"] = pya.DPoint(
+            self.cpw_end_x - self.coupler_width/2,  # Left side of coupler junction
+            self.cpw_end_y
+        )
+
         # Add mesh control regions for fine-grained ANSYS mesh refinement
         # Disabled for Q3D ACRL simulations due to ANSYS bug with mesh layer deletion
         if self.enable_mesh_layers:
-            # mesh_1: Fine mesh around spike regions
-            spikes_meshing_region = self._make_spike_meshing_region()
+            # mesh_1: Fine mesh around cpw
             self.cell.shapes(self.get_layer("mesh_1")).insert(
-                spikes_meshing_region
+                cpw_region
             )
 
-            # mesh_2: Coarse mesh for inductor region (only when inductor is included)
+            # mesh_2: Mesh around junction dielectric
             if self.include_inductor:
                 self.cell.shapes(self.get_layer("mesh_2")).insert(
-                    inductor_region
+                    aluminum_region
                 )
 
-            # mesh_3: Fine mesh in capacitor
-            cap_meshing_region = self._make_cap_meshing_region()
-            self.cell.shapes(self.get_layer("mesh_3")).insert(
-                cap_meshing_region
+        # Add CPW resonator stub geometry for zoomed simulations
+        # This provides a horizontal RLC boundary to represent the full CPW resonator
+        if self.use_cpw_resonator_stub:
+            # Create small rectangle on lumped_rlc layer at CPW end
+            stub_length = 2  # Small stub in X direction (µm)
+            stub_width = self.cpw_a  # Full CPW center conductor width
+
+            stub_pts = [
+                pya.DPoint(self.cpw_end_x - stub_length/2, self.cpw_end_y - stub_width/2),
+                pya.DPoint(self.cpw_end_x + stub_length/2, self.cpw_end_y - stub_width/2),
+                pya.DPoint(self.cpw_end_x + stub_length/2, self.cpw_end_y + stub_width/2),
+                pya.DPoint(self.cpw_end_x - stub_length/2, self.cpw_end_y + stub_width/2),
+            ]
+            stub_region = pya.Region(pya.DPolygon(stub_pts).to_itype(self.layout.dbu))
+            self.cell.shapes(self.get_layer("lumped_rlc")).insert(stub_region)
+
+            # Add refpoints at stub edges for port creation
+            self.refpoints["cpw_resonator_signal"] = pya.DPoint(
+                self.cpw_end_x,
+                self.cpw_end_y + stub_width/2  # Top edge
             )
-        
+            self.refpoints["cpw_resonator_ground"] = pya.DPoint(
+                self.cpw_end_x,
+                self.cpw_end_y - stub_width/2  # Bottom edge
+            )
 
         # add reference point
         #self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
@@ -151,9 +205,40 @@ class METCPW(Element):
                     refpoint="junction_signal",
                     ground_refpoint="junction_ground",
                     inductance=simulation.junction_lumped_inductance * 1e-9,  # nH to H
-                    capacitance=simulation.junction_lumped_capacitance * 1e-15,  # fF to F
+                    capacitance=0,  # Set to 0 to leave unchecked in ANSYS (capacitance from 3D geometry)
+                    resistance=0,  # Set to 0 to leave unchecked in ANSYS (superconducting)
                     junction=True,  # Keep this for EPR calculations
                     lumped_element=True,  # Also mark as lumped
+                    rlc_type="parallel",
+                )
+            )
+
+        # If coupler junction is in lumped model mode, add RLC port
+        if getattr(simulation, 'coupler_bool', False) and getattr(simulation, 'coupler_use_lumped', False):
+            ports.append(
+                RefpointToInternalPort(
+                    refpoint="coupler_signal",
+                    ground_refpoint="coupler_ground",
+                    inductance=getattr(simulation, 'coupler_lumped_inductance', 11.5) * 1e-9,  # nH to H
+                    capacitance=0,  # Set to 0 to leave unchecked in ANSYS (capacitance from 3D geometry)
+                    resistance=0,  # Set to 0 to leave unchecked in ANSYS (superconducting)
+                    junction=True,  # Keep this for EPR calculations (marks as coupler junction)
+                    lumped_element=True,  # Also mark as lumped
+                    rlc_type="parallel",
+                )
+            )
+
+        # CPW resonator equivalent port (horizontal XY plane)
+        if getattr(simulation, 'cpw_resonator_bool', False):
+            ports.append(
+                RefpointToInternalPort(
+                    refpoint="cpw_resonator_signal",
+                    ground_refpoint="cpw_resonator_ground",
+                    inductance=getattr(simulation, 'cpw_resonator_inductance', 5.0) * 1e-9,  # nH to H
+                    capacitance=getattr(simulation, 'cpw_resonator_capacitance', 100.0) * 1e-15,  # fF to F
+                    resistance=getattr(simulation, 'cpw_resonator_resistance', 0.0),
+                    junction=False,  # Not a junction
+                    lumped_element=True,
                     rlc_type="parallel",
                 )
             )
@@ -210,15 +295,12 @@ class METCPW(Element):
 
 
     def _make_cpw_region(self):
-        coupling_y = self.a/2 + self.b + self.cpw_coupling_distance + self.cpw_b + self.cpw_a/2
-        coupling_y = - coupling_y
-
-        path_pts = [pya.DPoint(-self.cpw_coupling_length/2, coupling_y),
-                    pya.DPoint(self.cpw_coupling_length/2, coupling_y),
+        path_pts = [pya.DPoint(-self.cpw_coupling_length/2, self.cpw_feedline_center_y),
+                    pya.DPoint(self.cpw_coupling_length/2, self.cpw_feedline_center_y),
                     ]
 
-        path_pts += self._arc_points(self.cpw_coupling_length/2, coupling_y - self.cpw_radius, self.cpw_radius, np.pi/2, 0, self.n/4)
-        cpw_folds_top_y = - coupling_y - self.cpw_radius - self.cpw_extra_length
+        path_pts += self._arc_points(self.cpw_coupling_length/2, self.cpw_feedline_center_y - self.cpw_radius, self.cpw_radius, np.pi/2, 0, self.n/4)
+        cpw_folds_top_y = - self.cpw_feedline_center_y - self.cpw_radius - self.cpw_extra_length
         cpw_folds_start_x = self.cpw_coupling_length/2 + self.cpw_radius
         path_pts += [pya.DPoint(cpw_folds_start_x, cpw_folds_top_y)]
 
@@ -234,6 +316,15 @@ class METCPW(Element):
                 path_pts += [pya.DPoint(cpw_folds_start_x + 2*(i+1)*self.cpw_radius, cpw_folds_top_y)]
             i += 1
 
+        if self.cpw_n_folds % 2 == 1:
+            #ends going down
+            path_pts += self._arc_points(self.cpw_end_x - 2*self.cpw_end_length + self.cpw_radius, self.cpw_end_y - self.cpw_radius, self.cpw_radius, np.pi, np.pi/2, self.n/4)
+        else:
+            #ends going up
+            path_pts += self._arc_points(self.cpw_end_x - 2*self.cpw_end_length + self.cpw_radius, self.cpw_end_y + self.cpw_radius, self.cpw_radius, -np.pi, -np.pi/2, self.n/4)
+
+        path_pts += [pya.DPoint(self.cpw_end_x, self.cpw_end_y)]
+
         cpw_center_dpath = pya.DPath(path_pts, self.cpw_a)
         cpw_center_polygon = cpw_center_dpath.to_itype(self.layout.dbu)
         cpw_center_region = pya.Region(cpw_center_polygon)
@@ -242,26 +333,67 @@ class METCPW(Element):
         cpw_gap_polygon = cpw_gap_dpath.to_itype(self.layout.dbu)
         cpw_gap_region = pya.Region(cpw_gap_polygon)
 
-        return cpw_gap_region - cpw_center_region
+        if self.cpw_cutout_bool:
+            cpw_cutout_pts = [
+                pya.DPoint(-self.cpw_coupling_length/2, self.cpw_feedline_center_y - self.cpw_a/2 - self.cpw_b),
+                pya.DPoint(-self.cpw_coupling_length/2 - self.feedline_cutout, self.cpw_feedline_center_y - self.cpw_a/2 - self.cpw_b),
+                pya.DPoint(-self.cpw_coupling_length/2 - self.feedline_cutout, self.cpw_feedline_center_y + self.cpw_a/2 + self.cpw_b),
+                pya.DPoint(-self.cpw_coupling_length/2, self.cpw_feedline_center_y + self.cpw_a/2 + self.cpw_b),
+            ]
+            cpw_cutout_region = pya.Region(pya.DPolygon(cpw_cutout_pts).to_itype(self.layout.dbu))
+        else:
+            cpw_cutout_region = pya.Region()
+
+
+        return cpw_gap_region - cpw_center_region + cpw_cutout_region
     
     def _get_met_gap_region(self):
-        met_gap_height = self.gap_finger + self.met_height + self.met_bridge_length + self.coupler_height
+        met_gap_length = self.gap_finger + self.met_height + self.met_bridge_length
 
         gap_region_pts = [
-            pya.DPoint(self.cpw_end_x - self.met_width/2 - self.gap_width/2, self.cpw_end_y),
-            pya.DPoint(self.cpw_end_x + self.met_width/2 + self.gap_width/2, self.cpw_end_y),
-            pya.DPoint(self.cpw_end_x + self.met_width/2 + self.gap_width/2, self.cpw_end_y - met_gap_height),
-            pya.DPoint(self.cpw_end_x - self.met_width/2 - self.gap_width/2, self.cpw_end_y - met_gap_height),
-        ] 
+                          pya.DPoint(self.cpw_end_x, self.cpw_end_y - self.gap_width/2),
+                          pya.DPoint(self.cpw_end_x + met_gap_length, self.cpw_end_y - self.gap_width/2), 
+                          pya.DPoint(self.cpw_end_x + met_gap_length, self.cpw_end_y - self.met_width/2), 
+                          pya.DPoint(self.cpw_end_x + met_gap_length - self.gap_finger, self.cpw_end_y - self.met_width/2),
+                          pya.DPoint(self.cpw_end_x + met_gap_length - self.gap_finger, self.cpw_end_y + self.met_width/2), 
+                          pya.DPoint(self.cpw_end_x + met_gap_length, self.cpw_end_y + self.met_width/2),  
+                          pya.DPoint(self.cpw_end_x + met_gap_length, self.cpw_end_y + self.gap_width/2), 
+                          pya.DPoint(self.cpw_end_x, self.cpw_end_y + self.gap_width/2),
+            ] 
 
         return pya.Region(pya.DPolygon(gap_region_pts).to_itype(self.layout.dbu))
     
     def _make_top_electrode(self):
-        return pya.Region()
+        met_pts = [
+            pya.DPoint(self.met_center_x - self.met_height/2 - self.al_undercut, self.met_center_y - self.met_width/2 - self.al_undercut),
+            pya.DPoint(self.met_center_x + self.met_height/2 + self.al_undercut, self.met_center_y - self.met_width/2 - self.al_undercut),
+            pya.DPoint(self.met_center_x + self.met_height/2 + self.al_undercut, self.met_center_y + self.met_width/2 + self.al_undercut),
+            pya.DPoint(self.met_center_x - self.met_height/2 - self.al_undercut, self.met_center_y + self.met_width/2 + self.al_undercut),
+        ]
+
+        coupler_pts = [
+            pya.DPoint(self.cpw_end_x - self.coupler_width/2 - self.al_undercut, self.cpw_end_y - self.coupler_height/2 - self.al_undercut),
+            pya.DPoint(self.cpw_end_x - self.coupler_width/2 - self.al_undercut, self.cpw_end_y + self.coupler_height/2 + self.al_undercut),
+            pya.DPoint(self.cpw_end_x + self.coupler_width/2 + self.al_undercut, self.cpw_end_y + self.coupler_height/2 + self.al_undercut),
+            pya.DPoint(self.cpw_end_x + self.coupler_width/2 + self.al_undercut, self.cpw_end_y - self.coupler_height/2 - self.al_undercut),
+        ]
+
+        bridge_pts = [
+            pya.DPoint(self.met_center_x, self.met_center_y - self.met_bridge_width/2),
+            pya.DPoint(self.cpw_end_x, self.met_center_y - self.met_bridge_width/2),
+            pya.DPoint(self.cpw_end_x, self.met_center_y + self.met_bridge_width/2),
+            pya.DPoint(self.met_center_x, self.met_center_y + self.met_bridge_width/2),
+        ]
+
+        met_region = pya.Region(pya.DPolygon(met_pts).to_itype(self.layout.dbu))
+        coupler_region = pya.Region(pya.DPolygon(coupler_pts).to_itype(self.layout.dbu))
+        bridge_region = pya.Region(pya.DPolygon(bridge_pts).to_itype(self.layout.dbu))
+        top_electrode = met_region + coupler_region + bridge_region
+
+        return top_electrode.merge()
     
     def _make_al_region(self, top_electrode_region):
-        return pya.Region()
+        return top_electrode_region.sized(-self.al_undercut/ self.layout.dbu)
     
-    def _make_bottom_electrode(self, top_electrode_region):
-        return pya.Region()
-        
+    def _make_bottom_electrode(self, al_region):
+        return al_region        

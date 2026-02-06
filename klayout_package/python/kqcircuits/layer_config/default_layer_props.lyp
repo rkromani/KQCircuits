@@ -390,6 +390,23 @@
    <name />
    <source>'1b1 mesh 5' 32/1@1</source>
   </group-members>
+  <group-members>
+   <frame-color>#FF6347</frame-color>
+   <fill-color>#FF6347</fill-color>
+   <frame-brightness>0</frame-brightness>
+   <fill-brightness>0</fill-brightness>
+   <dither-pattern>I5</dither-pattern>
+   <line-style />
+   <valid>true</valid>
+   <visible>true</visible>
+   <transparent>true</transparent>
+   <width>1</width>
+   <marked>false</marked>
+   <xfill>false</xfill>
+   <animation>0</animation>
+   <name />
+   <source>'1b1 lumped rlc' 33/1@1</source>
+  </group-members>
  </properties>
  <properties>
   <frame-color />
@@ -781,6 +798,23 @@
    <name />
    <source>'1t1 mesh 5' 160/1@1</source>
   </group-members>
+  <group-members>
+   <frame-color>#FF6347</frame-color>
+   <fill-color>#FF6347</fill-color>
+   <frame-brightness>0</frame-brightness>
+   <fill-brightness>0</fill-brightness>
+   <dither-pattern>I5</dither-pattern>
+   <line-style />
+   <valid>true</valid>
+   <visible>true</visible>
+   <transparent>true</transparent>
+   <width>1</width>
+   <marked>false</marked>
+   <xfill>false</xfill>
+   <animation>0</animation>
+   <name />
+   <source>'1t1 lumped rlc' 161/1@1</source>
+  </group-members>
  </properties>
  <properties>
   <frame-color />
@@ -1171,6 +1205,23 @@
    <animation>0</animation>
    <name />
    <source>'2b1 mesh 5' 32/2@1</source>
+  </group-members>
+  <group-members>
+   <frame-color>#FF6347</frame-color>
+   <fill-color>#FF6347</fill-color>
+   <frame-brightness>0</frame-brightness>
+   <fill-brightness>0</fill-brightness>
+   <dither-pattern>I5</dither-pattern>
+   <line-style />
+   <valid>true</valid>
+   <visible>true</visible>
+   <transparent>true</transparent>
+   <width>1</width>
+   <marked>false</marked>
+   <xfill>false</xfill>
+   <animation>0</animation>
+   <name />
+   <source>'2b1 lumped rlc' 33/2@1</source>
   </group-members>
  </properties>
  <properties>
@@ -1579,6 +1630,23 @@
    <animation>0</animation>
    <name />
    <source>'2t1 mesh 5' 160/2@1</source>
+  </group-members>
+  <group-members>
+   <frame-color>#FF6347</frame-color>
+   <fill-color>#FF6347</fill-color>
+   <frame-brightness>0</frame-brightness>
+   <fill-brightness>0</fill-brightness>
+   <dither-pattern>I5</dither-pattern>
+   <line-style />
+   <valid>true</valid>
+   <visible>true</visible>
+   <transparent>true</transparent>
+   <width>1</width>
+   <marked>false</marked>
+   <xfill>false</xfill>
+   <animation>0</animation>
+   <name />
+   <source>'2t1 lumped rlc' 161/2@1</source>
   </group-members>
  </properties>
  <properties>

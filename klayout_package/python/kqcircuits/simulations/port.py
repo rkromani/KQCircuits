@@ -91,6 +91,7 @@ class InternalPort(Port):
         rlc_type: str = "parallel",
         etch_width: float = None,
         floating: bool = False,
+        net_name: str = None,
     ):
         """
         Args:
@@ -108,6 +109,7 @@ class InternalPort(Port):
             etch_width: Width of a trace between signal_location and ground_location, on which the metal is etched away.
                 Useful when adding a lumped port on a waveguide.
             floating: activate floating port -> does not force "ground side" to ground.
+            net_name: Custom name for the signal net in Q3D simulations (e.g., "left_capacitor").
         """
         super().__init__(number, resistance, reactance, inductance, capacitance, face, junction, lumped_element, rlc_type)
         self.signal_location = signal_location
@@ -116,6 +118,8 @@ class InternalPort(Port):
         if etch_width is not None:
             self.etch_width = etch_width
         self.floating = floating
+        if net_name is not None:
+            self.net_name = net_name
 
     def get_etch_polygon(self):
         """Returns polygon under which the metal should be etched away"""

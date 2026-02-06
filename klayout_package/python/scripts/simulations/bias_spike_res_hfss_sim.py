@@ -133,21 +133,21 @@ sim_parameters = {
     "name": "bias_spike_res_eigenmode",
     "use_internal_ports": True,   # Use internal port to define signal net
     "use_ports": True,            # Enable port system for net assignment
-    "box": pya.DBox(pya.DPoint(-500, -4500), pya.DPoint(1000, 1500)),
+    "box": pya.DBox(pya.DPoint(-500, -6500), pya.DPoint(1000, 1500)),
     "ground_cutout_bool": True,
     "face_stack": ["1t1"],
 
     "l_height": 2000,
     "spike_number": 0,
     "junction_bool": False,
-    "use_lumped_models": True,
+    "use_lumped_models": False,
 
     #"finger_number": 40,
     "finger_length": 100,
     "finger_gap": 2, 
     "ground_cutout_bool": False, 
 
-    "a": 4.6,
+    "a": 5.85,
     "b": 10,
     "n": 24, #number of points per circle
 }
@@ -160,7 +160,7 @@ export_parameters = {
     "exit_after_run": False,
 
     # Eigenmode-specific parameters
-    "n_modes": 1,  # Number of eigenmodes to solve for
+    "n_modes": 3,  # Number of eigenmodes to solve for
     "min_frequency": 1,  # Minimum frequency in GHz
     "max_delta_f": 0.3,  # Convergence criterion: max frequency change (%)
     "maximum_passes": 20,
@@ -168,9 +168,9 @@ export_parameters = {
 
     # Custom mesh refinement for accurate results
     "mesh_size": {
-        "1t1_mesh_2": 6,  # inductor
-        "1t1_mesh_3": 6,  # capacitor gaps
-        #"1t1_mesh_4": 4,  # grounding capacitor gaps
+        "1t1_mesh_2": 10,  # inductor
+        "1t1_mesh_3": 10,  # capacitor gaps
+        "1t1_mesh_4": 10,  # grounding capacitor gaps
 
     },
 }
@@ -187,7 +187,8 @@ import json
 sweep_params = {
     # Example sweeps - adjust based on what you want to study
     #"finger_number": [25, 50],
-    "cap_lumped_value": [5000, 10000, 20000, 50000],
+    #"cap_lumped_value": [5000, 10000, 20000, 50000],
+    "end_box_height": [40],
 }
 
 # Apply sweep overrides if provided

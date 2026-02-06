@@ -21,6 +21,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+import numpy as np
 
 from kqcircuits.pya_resolver import pya
 from kqcircuits.simulations.export.ansys.ansys_export import export_ansys
@@ -123,7 +124,7 @@ sweep_params = {
     #"feedline_length": [500, 750, 1000, 1250, 1500],
     #"feedline_spacing": [1, 2, 5, 10, 20],
     #"l_coupling_distance": [2, 5]
-    "l_height": [1000, 1500, 2000, 2500],
+    "l_coupling_distance": np.arange(2, 6, 1).tolist(),
 }
 
 # Apply sweep overrides if provided

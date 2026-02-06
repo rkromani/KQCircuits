@@ -1,4 +1,5 @@
 # This code is part of KQCircuits
+# Copyright (C) 2025 Roger Romani
 # Copyright (C) 2021 IQM Finland Oy
 #
 # This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
@@ -33,7 +34,7 @@ from kqcircuits.simulations.export.simulation_export import (
 sys.path.insert(0, str(Path(__file__).parents[4]))  # Add repo root to path
 from simulations_database.tools.simulation_db import SimulationDB
 
-from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
+from kqcircuits.elements.resonator_spike import ResonatorSpike
 from kqcircuits.simulations.post_process import PostProcess
 from kqcircuits.simulations.single_element_simulation import get_single_element_sim_class
 from kqcircuits.util.export_helper import (
@@ -43,73 +44,122 @@ from kqcircuits.util.export_helper import (
 )
 
 # Parse command-line arguments
-parser = argparse.ArgumentParser(description="Run Q3D capacitance simulations on grounded finger capacitor")
+parser = argparse.ArgumentParser(description="Run HFSS eigenmode simulations on spike resonator")
 parser.add_argument("--no-gui", action="store_true",
                     help="Don't open KLayout to view results (default: open KLayout)")
 parser.add_argument("--sweep-override", type=str, default=None,
-                    help="Override sweep parameters as JSON (e.g., '{\"finger_length\": [5, 10, 20]}')")
+                    help="Override sweep parameters as JSON (e.g., '{\"l_height\": [1000, 2000]}')")
 args = parser.parse_args()
 
 # Prepare output directory
 dir_path = create_or_empty_tmp_directory(Path(__file__).stem + "_output")
 
-# Create custom simulation class that adds a port to the center spike region
-BaseSimClass = get_single_element_sim_class(FingerCapacitorGroundV3)
+# Create custom simulation class
+BaseSimClass = get_single_element_sim_class(ResonatorSpike)
 
-class FingerCapacitorQ3dSim(BaseSimClass):
-    """Custom simulation class for Q3D capacitance measurement of spike regions.
+class SpikeResHfssSim(BaseSimClass):
+    """Custom simulation class for HFSS eigenmode analysis of spike resonator.
 
-    Adds an internal port to the center spike region to make it a signal net.
-    The outer spike regions (physically separated) will be ground.
-    Q3D measures capacitance between center (SignalNet) and outer (GroundNet).
+    This performs eigenmode analysis to extract resonance frequencies and Q factors.
     """
 
     def build(self):
         # Call parent build to create geometry
         super().build()
 
-        # Clear default feedline ports
-        self.ports = []
-
-        # Add internal port to CENTER finger structure (makes it a signal net)
-        # Use the signal_location reference point from the element geometry
-        # This point is at the center of the structure, inside the center conductor
-        signal_loc = self.refpoints['signal_location']
+        # Check if we're using lumped models
+        using_lumped = getattr(self, 'junction_use_lumped', False)
 
         from kqcircuits.simulations.port import InternalPort
-        self.ports.append(
-            InternalPort(
-                number=1,
-                signal_location=signal_loc,
-                ground_location=None,
+
+        if not using_lumped:
+            # FULL GEOMETRY MODE: Set up net assignment ports
+            self.ports = []
+
+            # For eigenmode, we assign ports to define electrical nets
+            # Port on capacitor/feedline coupling region
+            try:
+                signal_loc_cap = self.refpoints['feedline_a']
+            except KeyError:
+                signal_loc_cap = pya.DPoint(0, 0)
+
+            # Port on inductor - use ACRL source point if available
+            try:
+                signal_loc_inductor = self.refpoints['acrl_source_main_inductor']
+            except KeyError:
+                try:
+                    signal_loc_inductor = self.refpoints['inductor_ground']
+                except KeyError:
+                    # Fallback to a reasonable location
+                    signal_loc_inductor = pya.DPoint(0, -1000)
+
+            # Both ports use number=1, telling ANSYS they're the same electrical net
+            self.ports.append(
+                InternalPort(
+                    number=1,
+                    signal_location=signal_loc_cap,
+                    ground_location=None,
+                )
             )
-        )
 
-SimClass = FingerCapacitorQ3dSim
+            self.ports.append(
+                InternalPort(
+                    number=1,  # Same number = same net
+                    signal_location=signal_loc_inductor,
+                    ground_location=None,
+                )
+            )
+        else:
+            # LUMPED MODEL MODE: Use the ports defined in get_sim_ports
+            # The ResonatorSpike.get_sim_ports() will handle junction lumped models
+            pass
 
-# Simulation parameters for Q3D capacitance measurement
+SimClass = SpikeResHfssSim
+
+# Simulation parameters for HFSS eigenmode analysis
 sim_parameters = {
-    "name": "finger_capacitor_q3d",
-    "use_internal_ports": True,   # Use internal port on center spike region
-    "use_ports": True,            # Enable port system
-    "box": pya.DBox(pya.DPoint(0, -1200), pya.DPoint(500, 1500)),
-    "ground_cutout_bool": True, 
+    "name": "spike_res_eigenmode",
+    "use_internal_ports": True,   # Use internal port to define signal net
+    "use_ports": True,            # Enable port system for net assignment
+    "box": pya.DBox(pya.DPoint(-500, -4500), pya.DPoint(1000, 1500)),
     "face_stack": ["1t1"],
+
+    # ResonatorSpike parameters
+    #"l_height": 2000,
+    #"spike_number": 0,
+    #"junction_bool": False,
+    #"include_inductor": True,
+    #"enable_mesh_layers": True,
+
+    # Feedline parameters
+    #"feedline_length": 700,
+    #"feedline_spacing": 10,
+    #"feedline_cutout_bool": False,
+
+    # CPW parameters
+    "a": 4.6,
+    "b": 10,
+    "n": 24,  # number of points per circle
 }
 
-# Q3D export parameters
+# HFSS eigenmode export parameters
 export_parameters = {
     "path": dir_path,
-    "ansys_tool": "q3d",
-    "post_process": PostProcess("produce_cmatrix_table.py"),
+    "ansys_tool": "eigenmode",
+    "post_process": PostProcess("produce_epr_table.py"),  # Eigenmode post-processing
     "exit_after_run": False,
-    "percent_error": 0.3,  # Reasonable accuracy (0.2-0.5 typical for production)
-    "minimum_converged_passes": 2,
+
+    # Eigenmode-specific parameters
+    "n_modes": 1,  # Number of eigenmodes to solve for
+    "min_frequency": 1,  # Minimum frequency in GHz
+    "max_delta_f": 0.3,  # Convergence criterion: max frequency change (%)
     "maximum_passes": 20,
-    "use_floating_islands": True,  # Treat isolated spike system as floating net
-    # Custom mesh refinement for accurate results in spike regions
+    "minimum_converged_passes": 2,
+
+    # Custom mesh refinement for accurate results
     "mesh_size": {
-        "1t1_mesh_4": 4,    # Fine mesh around spike regions (0.25 µm)
+        "1t1_mesh_2": 6,  # inductor
+        "1t1_mesh_3": 6,  # capacitor gaps
     },
 }
 
@@ -123,10 +173,9 @@ simulations = []
 # Define base sweep parameters (can be overridden via --sweep-override)
 import json
 sweep_params = {
-    "finger_number": [30, 40, 50],
-    #"finger_length": [20, 50, 100],
-    #"finger_width": [1, 2, 3, 5, 10, 20],
-    #"finger_gap": [2, 3, 5],
+    # Example sweeps - adjust based on what you want to study
+    #"l_height": [1500, 2000, 2500],
+    #"end_box_height": [50, 60, 70, 80, 90, 100],
 }
 
 # Apply sweep overrides if provided
@@ -138,7 +187,7 @@ if args.sweep_override:
     except json.JSONDecodeError as e:
         print(f"Warning: Could not parse sweep overrides: {e}")
 
-# Sweep spike number to characterize capacitance vs number of fingers
+# Generate simulations from parameter sweep
 simulations += cross_sweep_simulation(
     layout,
     SimClass,
@@ -150,25 +199,25 @@ simulations += cross_sweep_simulation(
 db = SimulationDB()
 db_folders = db.register_simulations(
     simulations=simulations,
-    design_name='finger_cap_grounded',
+    design_name='spike_resonator',
     sim_parameters=sim_parameters,
     export_parameters=export_parameters,
     output_folder=dir_path
 )
 
-# Export Ansys Q3D files
+# Export Ansys HFSS eigenmode files
 export_ansys(simulations, **export_parameters)
 
 # Write oas file
 oas_file = export_simulation_oas(simulations, dir_path)
-print(f"Exported Q3D simulation files to: {dir_path}")
+print(f"Exported HFSS eigenmode simulation files to: {dir_path}")
 print(f"OAS file: {oas_file}")
 print(f"Number of simulations: {len(simulations)}")
 
 # Print next steps for database workflow
 print(f"\n{'='*60}")
-print(f"→ Next step:")
-print(f"  Run ANSYS simulations: {dir_path}/simulation.bat")
+print(f"-> Next step:")
+print(f"  Run ANSYS simulations: {dir_path}\\simulation.bat")
 print(f"  (Results will be automatically saved to database)")
 print(f"{'='*60}\n")
 

@@ -68,30 +68,43 @@ class ResonatorSpikeQ3dSim(BaseSimClass):
         # Call parent build to create geometry
         super().build()
 
-        # Clear default feedline ports
+        # Clear default feedline ports (we'll recreate them as internal ports)
         self.ports = []
 
-        # Add internal port to CENTER spike region (makes it a signal net)
+        from kqcircuits.simulations.port import InternalPort
+
+        # Port 1: Feedline center conductor (signal net 2 - isolated by cutout)
+        # Place port in the feedline center conductor
+        feedline_y = 0  # Feedline is centered at y=0
+        feedline_x = 0  # Place port in the middle of feedline
+        self.ports.append(
+            InternalPort(
+                number=1,
+                signal_location=pya.DPoint(feedline_x, feedline_y),
+                ground_location=None,
+            )
+        )
+
+        # Port 2: Center capacitor conductor (signal net 1 - has spikes, isolated by include_inductor=False)
         # Port placed in the center end box region
-        # Calculate position from parameters (center box is at l_coupling_length/2)
         center_x = 0  # Centered horizontally
 
         # Calculate y position: end_box_bottom + half height
-        # end_box_bottom = end_box_spacing + ground_gap_bottom
         ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing +
                               self.b + self.a/2)
         end_box_height = self.end_box_height
         end_box_bottom = self.end_box_spacing + ground_gap_bottom
         center_y = end_box_bottom + end_box_height / 2
 
-        from kqcircuits.simulations.port import InternalPort
         self.ports.append(
             InternalPort(
-                number=1,
+                number=2,
                 signal_location=pya.DPoint(center_x, center_y),
                 ground_location=None,
             )
         )
+
+        # Ground net will be automatically assigned to the ground plane (all other metal)
 
 SimClass = ResonatorSpikeQ3dSim
 
@@ -103,7 +116,8 @@ sim_parameters = {
     "box": pya.DBox(pya.DPoint(0, -3000), pya.DPoint(1000, 3000)),
     "shadow_angle_1": 0,
     "shadow_angle_2": 0,
-    #"spike_number": 1,
+    "spike_number": 0,
+    "spike_gap": 0.0, 
     #"spike_height": 2,
     #"spike_base_width": 2,
     #"t_cut_number": 0,
@@ -145,10 +159,12 @@ simulations = []
 # Define base sweep parameters (can be overridden via --sweep-override)
 import json
 sweep_params = {
-    "spike_number": [0, 5, 10, 15, 20],
+    #"spike_number": [0, 5, 10, 15, 20],
     #"spike_gap": [0.025, 0.05, 0.1, 0.15, 0.2,],
     #"spike_height": [2.0, 4.0, 10.0, 15.0, 20.0],
     #"spike_base_width": [0.125, 0.25, 0.5, 1.0, 2.0],
+    "end_box_height": [600, 800, 1000],
+    "spike_height": [1, 1.5, 2],
 }
 
 # Apply sweep overrides if provided
