@@ -31,23 +31,23 @@ import numpy as np
 class ResonatorSpike(Element):
 
     feedline_length = Param(pdt.TypeDouble, "Feedline length", 700, unit="μm")
-    feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 5, unit="μm")
+    feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 4, unit="μm")
     feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
     feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", True)
 
-    l_length = Param(pdt.TypeDouble, "Inductor length", 4000, unit="μm")
+    l_length = Param(pdt.TypeDouble, "Inductor length", 4252, unit="μm")
     l_width = Param(pdt.TypeDouble, "Inductor width", 3, unit="μm")
-    l_coupling_length = Param(pdt.TypeDouble, "Inductor coupling length", 500, unit="μm")
-    l_coupling_distance = Param(pdt.TypeDouble, "Inductor coupling distance", 16, unit="μm")
+    l_coupling_length = Param(pdt.TypeDouble, "Inductor coupling length", 600, unit="μm")
+    l_coupling_distance = Param(pdt.TypeDouble, "Inductor coupling distance", 4, unit="μm")
     #l_height = Param(pdt.TypeDouble, "Inductor height", 1800, unit="μm")
     l_radius = Param(pdt.TypeDouble, "Inductor turn radius", 25, unit="μm")
     l_ground_gap = Param(pdt.TypeDouble, "Inductor ground gap", 80, unit="μm")
-    l_grounding_distance = Param(pdt.TypeDouble, "Inductor grounding distance from side of capacitor", 20, unit="μm")
+    l_grounding_distance = Param(pdt.TypeDouble, "Inductor grounding distance from side of capacitor", 50, unit="μm")
     l_junction_width = Param(pdt.TypeDouble, "Width of inductor above end box used for coupling junction", 15, unit="μm")
     l_junction_spacing = Param(pdt.TypeDouble, "Spacing between top of capacitor ground and junction", 15, unit="μm")
 
     end_box_width = Param(pdt.TypeDouble, "End box width", 20, unit="μm")
-    end_box_height = Param(pdt.TypeDouble, "End box height", 60, unit="μm")
+    end_box_height = Param(pdt.TypeDouble, "End box height", 390, unit="μm")
     end_box_spacing = Param(pdt.TypeDouble, "End box spacing from bottom of ground gap box", 20, unit="μm")
 
     t_cut_body_width = Param(pdt.TypeDouble, "Width of T-cut", 3, unit="μm")

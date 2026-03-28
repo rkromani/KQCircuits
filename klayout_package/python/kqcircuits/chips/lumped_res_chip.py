@@ -25,7 +25,7 @@ from kqcircuits.elements.launcher import Launcher
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
-from kqcircuits.elements.resonator_spike import ResonatorSpike
+from kqcircuits.elements.bias_resonator import BiasResonator
 from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
@@ -61,7 +61,7 @@ import numpy as np
 # @add_parameters_from(Junction, "junction_type")
 
 
-class ChipSpikeRes(Chip):
+class LumpedRes(Chip):
     # CPW parameters for resonator and capacitor
     a = Param(pdt.TypeDouble, "CPW center conductor width", 10, unit="μm")
     b = Param(pdt.TypeDouble, "CPW gap width", 5.85, unit="μm")
@@ -72,7 +72,6 @@ class ChipSpikeRes(Chip):
     taper_length = Param(pdt.TypeDouble, "Tapering length", 200, unit="μm")
     launcher_frame_gap = Param(pdt.TypeDouble, "Gap at chip frame", 100, unit="μm")
     launcher_indent = Param(pdt.TypeDouble, "Chip edge to pad port", 975, unit="μm")
-    launcher_y_position = Param(pdt.TypeDouble, "Launcher vertical position", 2750*2, unit="μm")
 
     cap_distance = Param(pdt.TypeDouble, "Capacitor distance from bottom of resonator ground gap", 50, unit="μm")
     launcher_turn_x = Param(pdt.TypeDouble, "Distance from tip of bias launcher to turn", 300, unit="μm")
@@ -90,38 +89,11 @@ class ChipSpikeRes(Chip):
     #S_bridge_gap = Param(pdt.TypeDouble, "Gap between finger and hook.", 0.15, unit="μm")
     #S_taper = Param(pdt.TypeDouble, "Width of fixed finger.", 2.0, unit="μm")
 
-    def produce_four_launchers(self, a_launcher, b_launcher, launcher_width, taper_length, launcher_frame_gap, 
-                              launcher_indent, pad_pitch, launcher_assignments=None,  enabled=None, chip_box=None,
-                            face_id=0):
-        
-        launcher_cell = self.add_element(Launcher, s=launcher_width, l=taper_length,
-                                             a_launcher=a_launcher, b_launcher=b_launcher,
-                                             launcher_frame_gap=launcher_frame_gap, face_ids=[self.face_ids[face_id]])
-
-        pads_per_side = [0,2,0,2]
-
-        dirs = (90, 0, -90, 180)
-        trans = (pya.DTrans(3, 0, self.box.p1.x, self.box.p2.y),
-                 pya.DTrans(2, 0, self.box.p2.x, self.box.p2.y),
-                 pya.DTrans(1, 0, self.box.p2.x, self.box.p1.y),
-                 pya.DTrans(0, 0, self.box.p1.x, self.box.p1.y))
-        _w = self.box.p2.x - self.box.p1.x
-        _h = self.box.p2.y - self.box.p1.y
-        sides = [_w, _h, _w, _h]
-
-        return self._insert_launchers(dirs, enabled, launcher_assignments, None, launcher_cell, launcher_indent,
-                                      launcher_width, pad_pitch, pads_per_side, sides, trans, face_id=0)
-
-    
     def produce_ground_grid(self):
         # no ground grid on test junction chip
         pass
 
     def build(self):
-        self.launchers = self.produce_four_launchers(self.a_launcher, self.b_launcher, self.launcher_width,
-                                   self.taper_length, self.launcher_frame_gap, self.launcher_indent, self.launcher_y_position, launcher_assignments={1: "W1", 2: "W2", 3:"E2", 4:"E1"})
-        
-
         # when not running as a macro in KLayout have to load the kqc libraries
         #load_libraries(path=Qubit.LIBRARY_PATH)
         #qubit_cell = self.layout.create_cell("BR1", Qubit.LIBRARY_NAME)
@@ -191,26 +163,35 @@ class ChipSpikeRes(Chip):
 
 
 
+        self.insert_cell(
+            Launcher, pya.DTrans(2, False, self.launcher_indent, 7500/2), f"W1",
+            a=self.a, b=self.b,
+        )
+        self.insert_cell(
+            Launcher, pya.DTrans(0, False, 7500-self.launcher_indent, 7500/2), f"E1",
+            a=self.a, b=self.b,
+        )
 
 
-        RS_coords = []
+
+        BR_coords = []
 
         center_x = 7500/2
         center_y = 7500/2
-        spacing = 800
-        n_res = 6
+        spacing = 1300
+        n_res = 4
         capacitor_heights = np.arange(100, 135, 5)
         coupling_spacings = np.arange(4, 16, 2)
         i = 0
         while i < n_res:
             if i < n_res/2:
-                RS_coord = pya.DTrans(2, False, center_x - (i - (n_res-1)/2)*spacing, center_y)
+                BR_coord = pya.DTrans(2, False, center_x - (i - (n_res-1)/2)*spacing, center_y)
             else:
-                RS_coord = pya.DTrans(0, False, center_x - (i - (n_res-1)/2)*spacing, center_y)
-            RS_coords.append(RS_coord)
+                BR_coord = pya.DTrans(0, False, center_x - (i - (n_res-1)/2)*spacing, center_y)
+            BR_coords.append(BR_coord)
 
             self.insert_cell(
-            ResonatorSpike, RS_coord, f"RS{i}", 
+            BiasResonator, BR_coord, f"BR{i}", 
             feedline_cutout_bool=False,
             end_box_height=float(capacitor_heights[i]), 
             l_coupling_distance=float(coupling_spacings[i])
@@ -218,21 +199,21 @@ class ChipSpikeRes(Chip):
 
             i += 1
 
-        launcher_feed_middle = ((-self.refpoints["W2_port"].x + self.refpoints["RS0_feedline_a"].x)/2)
+        launcher_feed_middle = ((-self.refpoints["W1_port"].x + self.refpoints["BR0_feedline_a"].x)/2)
         self.refpoints["launcher_feed_middle_l1"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["E1_port"].y)
-        self.refpoints["launcher_feed_middle_l2"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["RS0_feedline_b"].y)
-        self.refpoints["launcher_feed_middle_r1"] = pya.DPoint(self.refpoints["W2_port"].x + launcher_feed_middle, self.refpoints["W2_port"].y)
-        self.refpoints["launcher_feed_middle_r2"] = pya.DPoint(self.refpoints["W2_port"].x + launcher_feed_middle, self.refpoints[f"RS{n_res-1}_feedline_b"].y)
-        left_ref_names = ["W2_port"]
+        self.refpoints["launcher_feed_middle_l2"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["BR0_feedline_b"].y)
+        self.refpoints["launcher_feed_middle_r1"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints["W1_port"].y)
+        self.refpoints["launcher_feed_middle_r2"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints[f"BR{n_res-1}_feedline_b"].y)
+        left_ref_names = ["W1_port"]
         right_ref_names = []
         i = 0
         while i < n_res:
             if i < n_res/2:
-                left_ref_names.append(f"RS{i}_feedline_b")
-                right_ref_names.append(f"RS{i}_feedline_a")
+                left_ref_names.append(f"BR{i}_feedline_b")
+                right_ref_names.append(f"BR{i}_feedline_a")
             else:
-                left_ref_names.append(f"RS{i}_feedline_a")
-                right_ref_names.append(f"RS{i}_feedline_b")
+                left_ref_names.append(f"BR{i}_feedline_a")
+                right_ref_names.append(f"BR{i}_feedline_b")
             i += 1
         right_ref_names.append("E1_port")
 
@@ -267,19 +248,19 @@ class ChipSpikeRes(Chip):
                     ],
                 )
 
-        cap_to_skip = 2  # Example: skip capacitor for resonator 2
+        cap_to_skip = [0,1]  # Example: skip capacitor for resonator 2
         i = 0
         while i < n_res:
-            cap_center_x = self.refpoints[f"RS{i}_inductor_ground"].x
+            cap_center_x = self.refpoints[f"BR{i}_inductor_ground"].x
             
             if i < n_res/2:
                 rot = 2
-                cap_center_y = self.refpoints[f"RS{i}_inductor_ground"].y + self.cap_distance
+                cap_center_y = self.refpoints[f"BR{i}_inductor_ground"].y + self.cap_distance
             else:
                 rot = 0
-                cap_center_y = self.refpoints[f"RS{i}_inductor_ground"].y - self.cap_distance
+                cap_center_y = self.refpoints[f"BR{i}_inductor_ground"].y - self.cap_distance
             
-            if i != cap_to_skip:
+            if i not in cap_to_skip:
                 self.insert_cell(
                     FingerCapacitorGroundV3, pya.DTrans(rot, False, cap_center_x, cap_center_y), f"CAP{i}",
                     a=self.a, b=self.b,
@@ -288,77 +269,22 @@ class ChipSpikeRes(Chip):
                 self.insert_cell(
                         WaveguideComposite, 
                         nodes=[
-                            Node(self.refpoints[f"RS{i}_inductor_ground"]),
+                            Node(self.refpoints[f"BR{i}_inductor_ground"]),
                             Node(self.refpoints[f"CAP{i}_top_port"])
                         ],
                     )
+                
+                if i % 2 == 0:
+                    self.insert_cell(
+                            WaveguideComposite,
+                            nodes=[
+                                Node(self.refpoints[f'CAP{i}_bottom_port']),
+                                Node((self.refpoints[f'CAP{i}_bottom_port'].x, self.refpoints[f'CAP{i}_bottom_port'].y - self.cap_distance))
+                            ],
+                            a=0,
+                        )
             
             i += 1
-
-
-
-        #top bias connections
-        i = 0
-        splitter_inst, splitter_ref = self.insert_cell(
-            WaveguideCoplanarSplitter,
-            pya.DTrans(self.refpoints[f"CAP{i}_bottom_port"].x, 7500 - self.bias_rail_y),
-            f"T{i}",
-            **t_cross_parameters(
-                a=self.a,
-                b=self.b,
-                a2=self.a,
-                b2=self.b,
-                length_extra=5,
-                length_extra_side=5
-            )
-        )
-
-        self.insert_cell( WaveguideComposite, nodes=[
-                    Node(self.refpoints[f"W1_port"]),
-                    Node((self.refpoints[f"W1_port"].x - self.launcher_turn_x, self.refpoints[f"W1_port"].y)),
-                    Node((self.refpoints[f"W1_port"].x - self.launcher_turn_x, 7500 - self.bias_rail_y)),
-                    Node(self.refpoints[f"T0_port_right"])],)
-        self.insert_cell( WaveguideComposite, nodes=[
-                    Node(self.refpoints[f"T0_port_bottom"]),
-                    Node(self.refpoints[f"CAP0_bottom_port"])])
-        self.insert_cell( WaveguideComposite, nodes=[
-                    Node(self.refpoints[f"T0_port_left"]),
-                    Node((self.refpoints[f"CAP1_bottom_port"].x, self.refpoints[f"T0_port_left"].y)),
-                    Node(self.refpoints[f"CAP1_bottom_port"])])
-
-
-
-
-
-        #bottom bias connections
-
-        i = 5
-        splitter_inst, splitter_ref = self.insert_cell(
-            WaveguideCoplanarSplitter,
-            pya.DTrans(2, False, self.refpoints[f"CAP{i}_bottom_port"].x, self.bias_rail_y),
-            f"T{i}",
-            **t_cross_parameters(
-                a=self.a,
-                b=self.b,
-                a2=self.a,
-                b2=self.b,
-                length_extra=5,
-                length_extra_side=5
-            )
-        )
-
-        self.insert_cell( WaveguideComposite, nodes=[
-                    Node(self.refpoints[f"E2_port"]),
-                    Node((self.refpoints[f"E2_port"].x + self.launcher_turn_x, self.refpoints[f"E2_port"].y)),
-                    Node((self.refpoints[f"E2_port"].x + self.launcher_turn_x, self.bias_rail_y)),
-                    Node(self.refpoints[f"T5_port_right"])],)
-        self.insert_cell( WaveguideComposite, nodes=[
-                    Node(self.refpoints[f"T5_port_bottom"]),
-                    Node(self.refpoints[f"CAP5_bottom_port"])])
-        self.insert_cell( WaveguideComposite, nodes=[
-                    Node(self.refpoints[f"T5_port_left"]),
-                    Node((self.refpoints[f"CAP4_bottom_port"].x, self.refpoints[f"T5_port_left"].y)),
-                    Node(self.refpoints[f"CAP4_bottom_port"])])
 
 
 

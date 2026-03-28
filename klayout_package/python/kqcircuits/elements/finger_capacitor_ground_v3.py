@@ -37,9 +37,9 @@ class FingerCapacitorGroundV3(Element):
     a = Param(pdt.TypeDouble, "Center conductor width", 10, unit="μm")
     b = Param(pdt.TypeDouble, "Center conductor to ground gap", 6, unit="μm")
     
-    finger_gap = Param(pdt.TypeDouble, "Gap between the fingers", 3, unit="μm")
-    finger_width = Param(pdt.TypeDouble, "Width of each finger", 10, unit="μm")
-    finger_length = Param(pdt.TypeDouble, "Finger length", 100, unit="μm")
+    finger_gap = Param(pdt.TypeDouble, "Gap between the fingers", 4, unit="μm")
+    finger_width = Param(pdt.TypeDouble, "Width of each finger", 15, unit="μm")
+    finger_length = Param(pdt.TypeDouble, "Finger length", 50, unit="μm")
     finger_number = Param(pdt.TypeInt, "Number of fingers", 50)
     corner_r = Param(pdt.TypeDouble, "Corner rounding radius", 1, unit="μm")
     ground_cutout_bool = Param(pdt.TypeBoolean, "Whether to cut off center conductor from ground for sims", False)

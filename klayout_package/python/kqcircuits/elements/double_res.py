@@ -37,25 +37,28 @@ class DoubleRes(Element):
 
     feedline_length = Param(pdt.TypeDouble, "Feedline length", 1500, unit="μm")
     feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 10, unit="μm")
-    feedline_coupling_ground_spacing = Param(pdt.TypeDouble, "Feedline coupling ground spacing", 10, unit="μm")
+    feedline_coupling_ground_spacing = Param(pdt.TypeDouble, "Feedline coupling ground spacing", 5, unit="μm")
     feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
     feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", True)
 
-    l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 12000, unit="μm")
+    l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 9000, unit="μm")
     l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 80, unit="μm")
-    l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and feedline", 5, unit="μm")
-    l_ground_sep = Param(pdt.TypeDouble, "Separation between inductor and ground", 30, unit="μm")
-    l_width = Param(pdt.TypeDouble, "Width of inductor", 3, unit="μm")
+    l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and feedline", 10, unit="μm")
+    l_ground_sep = Param(pdt.TypeDouble, "Separation between inductor and ground", 50, unit="μm")
+    l_width = Param(pdt.TypeDouble, "Width of inductor", 4, unit="μm")
     l_radius = Param(pdt.TypeDouble, "Radius of inductor bends", 25, unit="μm")
 
-    cap_wide_height = Param(pdt.TypeDouble, "Height of wide capacitor section", 400, unit="μm")
+    cap_wide_height = Param(pdt.TypeDouble, "Height of wide capacitor section", 250, unit="μm")
     cap_narrow_height = Param(pdt.TypeDouble, "Height of narrow capacitor section", 10, unit="μm")
-    cap_wide_gap = Param(pdt.TypeDouble, "Gap of wide capacitor section", 2, unit="μm")
+    cap_wide_gap = Param(pdt.TypeDouble, "Gap of wide capacitor section", 4, unit="μm")
     cap_narrow_gap = Param(pdt.TypeDouble, "Gap of narrow capacitor section", 0.1, unit="μm")
     cap_inner_width = Param(pdt.TypeDouble, "Inner width of capacitor plates", 20, unit="μm")
     cap_outer_width = Param(pdt.TypeDouble, "Outer width of capacitor plates", 20, unit="μm")
+    cap_bias_length = Param(pdt.TypeDouble, "Length of bias lead", 50, unit="μm")
 
     include_inductor = Param(pdt.TypeBoolean, "Include inductor (disable for Q3D capacitance measurements)", True)
+    include_bias_resistor = Param(pdt.TypeBoolean, "Whether to include resistance on bias line", False)
+    ground_bias = Param(pdt.TypeBoolean, "Whether to ground bias line", True)
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", False)
 
     n = Param(pdt.TypeInt, "Number of points for rounding", 64)
@@ -88,10 +91,27 @@ class DoubleRes(Element):
 
         capacitor_region_wide = self._make_wide_capacitor_region()
         capacitor_region_narrow = self._make_narrow_capacitor_region()
+        bias_line, bias_line_gap = self._make_bias_leads()
 
         self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
-            feedline_region + ground_cutout - inductor_region - capacitor_region_wide - capacitor_region_narrow
+            feedline_region + ground_cutout - inductor_region - capacitor_region_wide - capacitor_region_narrow + bias_line_gap - bias_line
         )
+
+        if self.include_bias_resistor:
+            resistor_top_y = self.ground_gap_bottom - self.cap_bias_length + self.a
+            resistor_bottom_y = self.ground_gap_bottom - self.cap_bias_length - self.a - self.b
+            resistor_pts = [
+                pya.DPoint(-self.a/2, resistor_top_y),
+                pya.DPoint(self.a/2, resistor_top_y),
+                pya.DPoint(self.a/2, resistor_bottom_y),
+                pya.DPoint(-self.a/2, resistor_bottom_y),
+            ]
+            resistor_region = pya.Region(pya.DPolygon(resistor_pts).to_itype(self.layout.dbu))
+            self.cell.shapes(self.get_layer("lumped_rlc")).insert(resistor_region)
+
+            # Add refpoints at resistor edges for debugging
+            self.refpoints["resistor_signal"] = pya.DPoint(0, resistor_top_y)
+            self.refpoints["resistor_ground"] = pya.DPoint(0, resistor_bottom_y)
 
         # Add mesh control regions for fine-grained ANSYS mesh refinement
         # Disabled for Q3D ACRL simulations due to ANSYS bug with mesh layer deletion
@@ -130,6 +150,13 @@ class DoubleRes(Element):
         cap_bottom = self.ground_gap_bottom + self.l_ground_sep - self.l_width/2
         cap_center_y = cap_bottom + self.cap_wide_height/2
         self.refpoints["capacitor_signal"] = pya.DPoint(0, cap_center_y)
+
+        self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
+        self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
+        self.refpoints["feedline_a"] = pya.DPoint(-self.feedline_length/2, 0)
+        self.refpoints["feedline_b"] = pya.DPoint(self.feedline_length/2, 0)
+        self.refpoints["bias"] = pya.DPoint(0, self.ground_gap_bottom)
+
 
     @classmethod
     def get_sim_ports(cls, simulation):
@@ -211,11 +238,11 @@ class DoubleRes(Element):
         n_folds = math.ceil(l_foldable_length / (2 * max_length_per_fold))
         h_folds = l_foldable_length / (4 * n_folds) - np.pi * self.l_radius
 
-        path_pts = [pya.DPoint(0, self.ground_gap_top - self.l_ground_sep),
-                    pya.DPoint(-self.l_coupling_length/2, self.ground_gap_top - self.l_ground_sep),
+        path_pts = [pya.DPoint(0, self.ground_gap_top - self.l_coupling_distance),
+                    pya.DPoint(-self.l_coupling_length/2, self.ground_gap_top - self.l_coupling_distance),
                     ]
 
-        path_pts += self._arc_points(-self.l_coupling_length/2, self.ground_gap_top - self.l_ground_sep - self.l_radius, self.l_radius, np.pi/2, np.pi, self.n/4)
+        path_pts += self._arc_points(-self.l_coupling_length/2, self.ground_gap_top - self.l_coupling_distance - self.l_radius, self.l_radius, np.pi/2, np.pi, self.n/4)
         
         l_folds_start_y = self.ground_gap_bottom + 2 * self.l_ground_sep + self.l_radius
         l_folds_start_x = -self.l_coupling_length/2 - self.l_radius
@@ -248,7 +275,7 @@ class DoubleRes(Element):
         ground_region = pya.Region(ground_polygon)
 
 
-        return l_region + mirrored_region + ground_region
+        return l_region + mirrored_region #+ ground_region
     
     def _make_wide_capacitor_region(self):
         cap_bottom = self.ground_gap_bottom + self.l_ground_sep - self.l_width/2
@@ -287,7 +314,7 @@ class DoubleRes(Element):
         center_region = pya.Region(pya.DPolygon(center_pad_pts).to_itype(self.layout.dbu))
         bias_lead_region = pya.Region(pya.DPolygon(bias_lead_pts).to_itype(self.layout.dbu))
 
-        return left_region + right_region + center_region + bias_lead_region
+        return left_region + right_region + center_region #+ bias_lead_region
 
     def _make_narrow_capacitor_region(self):
         return pya.Region()
@@ -316,4 +343,46 @@ class DoubleRes(Element):
         gap_right_region = pya.Region(pya.DPolygon(gap_right_pts).to_itype(self.layout.dbu))
 
         return gap_left_region + gap_right_region
+    
+    def _make_bias_leads(self):
+        cap_bottom = self.ground_gap_bottom + self.l_ground_sep - self.l_width/2
 
+        bias_lead_pts = [
+            pya.DPoint(-self.a/2, cap_bottom),
+            pya.DPoint(-self.a/2, self.ground_gap_bottom - self.cap_bias_length),
+            pya.DPoint(self.a/2, self.ground_gap_bottom),
+            pya.DPoint(self.a/2, cap_bottom),
+        ]
+
+        bias_lead_region = pya.Region(pya.DPolygon(bias_lead_pts).to_itype(self.layout.dbu))
+
+        bias_gap_left_pts = [
+            pya.DPoint(-self.a/2 - self.b, self.ground_gap_bottom - self.cap_bias_length),
+            pya.DPoint(-self.a/2, self.ground_gap_bottom - self.cap_bias_length),
+            pya.DPoint(-self.a/2, self.ground_gap_bottom),
+            pya.DPoint(-self.a/2 - self.b, self.ground_gap_bottom),
+        ]
+
+        bias_gap_right_pts = [
+            pya.DPoint(self.a/2 + self.b, self.ground_gap_bottom - self.cap_bias_length),
+            pya.DPoint(self.a/2, self.ground_gap_bottom - self.cap_bias_length),
+            pya.DPoint(self.a/2, self.ground_gap_bottom),
+            pya.DPoint(self.a/2 + self.b, self.ground_gap_bottom),
+        ]
+
+        bias_gap_bottom_pts = [
+            pya.DPoint(-self.a/2 - self.b, self.ground_gap_bottom - self.cap_bias_length),
+            pya.DPoint(self.a/2 + self.b, self.ground_gap_bottom - self.cap_bias_length),
+            pya.DPoint(self.a/2 + self.b, self.ground_gap_bottom - self.cap_bias_length - self.b),
+            pya.DPoint(-self.a/2 - self.b, self.ground_gap_bottom - self.cap_bias_length - self.b),
+        ]
+
+        bias_gap_left_region = pya.Region(pya.DPolygon(bias_gap_left_pts).to_itype(self.layout.dbu))
+        bias_gap_right_region = pya.Region(pya.DPolygon(bias_gap_right_pts).to_itype(self.layout.dbu))
+
+        if self.ground_bias and not self.include_bias_resistor:
+            bias_gap_bottom_region = pya.Region()  # No gap region if bias line is grounded without resistor
+        else:
+            bias_gap_bottom_region = pya.Region(pya.DPolygon(bias_gap_bottom_pts).to_itype(self.layout.dbu))
+
+        return bias_lead_region, bias_gap_left_region + bias_gap_right_region + bias_gap_bottom_region
