@@ -38,9 +38,9 @@ class FinMet(Element):
     feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
     feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", False)
 
-    res_length = Param(pdt.TypeDouble, "Length of readout resonator CPW", 3970, unit="μm")
-    res_coupling_length = Param(pdt.TypeDouble, "Length of readout resonator coupling section", 200, unit="μm")
-    res_coupling_spacing = Param(pdt.TypeDouble, "Spacing of readout resonator coupling section", 25, unit="μm")
+    res_length = Param(pdt.TypeDouble, "Length of readout resonator CPW", 3950, unit="μm")
+    res_coupling_length = Param(pdt.TypeDouble, "Length of readout resonator coupling section", 250, unit="μm")
+    res_coupling_spacing = Param(pdt.TypeDouble, "Spacing of readout resonator coupling section", 26, unit="μm")
     res_cap_coupling = Param(pdt.TypeBoolean, "Whether coupling is capacitive or not", False)
     
     met_width = Param(pdt.TypeDouble, "Width of MET", 5, unit="μm")

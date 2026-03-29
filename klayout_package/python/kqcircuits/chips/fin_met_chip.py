@@ -184,10 +184,12 @@ class FinMetChip(Chip):
         single_spacing = 1396.036 - 912.536
         n_elements = 8        
         
-        element_params = [{'feedline_length': 10, 'res_length': 3970*0.85}, {'feedline_length': 10, 'res_length': 3970*0.9}, 
-                          {'feedline_length': 10, 'res_length': 3970*0.95}, {'feedline_length': 10, 'res_length': 3970*1},
-                          {'feedline_length': 10, 'res_length': 3970*1.05}, {'feedline_length': 10, 'res_length': 3970*1.10}, 
-                          {'feedline_length': 10, 'res_length': 3970*1.15}, {'feedline_length': 10, 'res_length': 3970*1.20},]
+        base_length = 3950
+        spacing = 0.025
+        element_params = [{'feedline_length': 10, 'res_length': base_length*(1-3*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1-2*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1-spacing)}, {'feedline_length': 10, 'res_length': base_length},
+                          {'feedline_length': 10, 'res_length': base_length*(1-1*spacing)}, {'feedline_length': 10, 'res_length': base_length*1},
+                          {'feedline_length': 10, 'res_length': base_length*(1+1*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1+2*spacing)}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1+3*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1+4*spacing)},]
         i = 0
         while i < n_elements:
             if i % 2 == 0:
@@ -248,31 +250,13 @@ class FinMetChip(Chip):
 
 
         for i in range(len(left_ref_names)):
-            if i == 0:
-                self.insert_cell(
-                    WaveguideComposite, 
-                    nodes=[
-                        Node(self.refpoints[left_ref_names[i]]),
-                        #Node(self.refpoints['launcher_feed_middle_r1']),
-                        #Node(self.refpoints['launcher_feed_middle_r2']),
-                        Node(self.refpoints[right_ref_names[i]])
-                    ],
-                )
-            elif i == len(left_ref_names) - 1:
-                self.insert_cell(
-                    WaveguideComposite, 
-                    nodes=[
-                        Node(self.refpoints[left_ref_names[i]]),
-                        Node(self.refpoints['launcher_feed_middle_l2']),
-                        Node(self.refpoints['launcher_feed_middle_l1']),
-                        Node(self.refpoints[right_ref_names[i]])
-                    ],
-                )
-            else:
-                self.insert_cell(
-                    WaveguideComposite, 
-                    nodes=[
-                        Node(self.refpoints[left_ref_names[i]]),
-                        Node(self.refpoints[right_ref_names[i]])
-                    ],
-                )
+            self.insert_cell(
+                WaveguideComposite, 
+                nodes=[
+                    Node(self.refpoints[left_ref_names[i]]),
+                    #Node(self.refpoints['launcher_feed_middle_r1']),
+                    #Node(self.refpoints['launcher_feed_middle_r2']),
+                    Node(self.refpoints[right_ref_names[i]])
+                ],
+            )
+            
