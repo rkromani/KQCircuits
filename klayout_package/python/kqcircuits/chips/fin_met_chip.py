@@ -186,10 +186,10 @@ class FinMetChip(Chip):
         
         base_length = 3950
         spacing = 0.025
-        element_params = [{'feedline_length': 10, 'res_length': base_length*(1-3*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1-2*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1-spacing)}, {'feedline_length': 10, 'res_length': base_length},
-                          {'feedline_length': 10, 'res_length': base_length*(1-1*spacing)}, {'feedline_length': 10, 'res_length': base_length*1},
-                          {'feedline_length': 10, 'res_length': base_length*(1+1*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1+2*spacing)}, 
-                          {'feedline_length': 10, 'res_length': base_length*(1+3*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1+4*spacing)},]
+        element_params = [{'feedline_length': 10, 'res_length': base_length*(1-3*spacing), 'coupler_width': 27}, {'feedline_length': 10, 'res_length': base_length*(1-2*spacing), 'coupler_width': 27}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1-1*spacing), 'coupler_width': 27}, {'feedline_length': 10, 'res_length': base_length*1, 'coupler_width': 27},
+                          {'feedline_length': 10, 'res_length': base_length*(1+1*spacing), 'coupler_width': 48}, {'feedline_length': 10, 'res_length': base_length*(1+2*spacing), 'coupler_width': 48}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1+3*spacing), 'coupler_width': 48}, {'feedline_length': 10, 'res_length': base_length*(1+4*spacing), 'coupler_width': 48},]
         i = 0
         while i < n_elements:
             if i % 2 == 0:

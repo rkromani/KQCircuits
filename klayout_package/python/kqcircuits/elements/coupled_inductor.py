@@ -52,7 +52,7 @@ class CoupledInductor(Element):
     l_middle_sep = Param(pdt.TypeDouble, "Separation between one side and the other of the inductor", 80, unit="μm")
     l_connection_spacing = Param(pdt.TypeDouble, "Spacing between inductors two connections", 200, unit="μm")
 
-    enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", False)
+    enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", True)
     sim_gap = Param(pdt.TypeBoolean, "Gap for ACRL simulation", False)
 
     n = Param(pdt.TypeInt, "Number of points for rounding", 64)
@@ -88,11 +88,22 @@ class CoupledInductor(Element):
             feedline_region + ground_cutout - inductor_region
         )
 
+
+
+        coupling_mesh_pts = [
+            pya.DPoint(self.l_coupling_length/2 + self.l_radius, self.a/2 + self.b),
+            pya.DPoint(self.l_coupling_length/2 + self.l_radius, self.ground_gap_top - self.l_coupling_distance - self.l_width),
+            pya.DPoint(-self.l_coupling_length/2 - self.l_radius, self.ground_gap_top - self.l_coupling_distance - self.l_width),
+            pya.DPoint(-self.l_coupling_length/2 - self.l_radius, self.a/2 + self.b)
+        ]
+        coupling_mesh_region = pya.Region(pya.DPolygon(coupling_mesh_pts).to_itype(self.layout.dbu))
+
         # Add mesh control regions for fine-grained ANSYS mesh refinement
         # Disabled for Q3D ACRL simulations due to ANSYS bug with mesh layer deletion
         if self.enable_mesh_layers:
             # mesh_2: Mesh over inductor region
-            self.cell.shapes(self.get_layer("mesh_2")).insert(inductor_region)
+            #self.cell.shapes(self.get_layer("mesh_2")).insert(inductor_region)
+            self.cell.shapes(self.get_layer("mesh_1")).insert(coupling_mesh_region)
 
         # Add named ACRL source/sink refpoints for Q3D inductance measurements
         # These refpoints will be automatically detected by get_acrl_sim_class()

@@ -807,6 +807,8 @@ class Simulation:
         excitations = [{}]
         z = self.face_z_levels()
         for port in ports:
+            if getattr(port, "lumped_element", False):
+                continue  # Lumped RLC ports are boundary conditions, not physical conductors
             signal_z = round(z[resolve_face(port.face, self.face_ids)][0], 12)
             if hasattr(port, "ground_location"):
                 v_mps = port.signal_location - port.ground_location

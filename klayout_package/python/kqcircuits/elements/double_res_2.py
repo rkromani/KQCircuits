@@ -33,14 +33,15 @@ import math
 
 @add_parameters_from(WaveguideCoplanar, "add_metal")
 class DoubleRes2(Element):
-    l_ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout for inductor", 1200, unit="μm")
-    
+    l_ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout for inductor", 1000, unit="μm")
+    l_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout for inductor", 1000, unit="μm")
+
     feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 10, unit="μm")
-    feedline_coupling_ground_spacing = Param(pdt.TypeDouble, "Feedline coupling ground spacing", 10, unit="μm")
+    feedline_coupling_ground_spacing = Param(pdt.TypeDouble, "Feedline coupling ground spacing", 5, unit="μm")
     
     l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 9000, unit="μm")
     l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 80, unit="μm")
-    l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and ground in coupling region", 10, unit="μm")
+    l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and ground in coupling region", 5, unit="μm")
     l_width = Param(pdt.TypeDouble, "Inductor width", 4, unit="μm")
     l_connection_spacing = Param(pdt.TypeDouble, "Spacing between inductors two connections", 200, unit="μm")
 
@@ -51,7 +52,7 @@ class DoubleRes2(Element):
 
     bias_line_length = Param(pdt.TypeDouble, "Length of bias line extending from capacitor", 50, unit="μm")
 
-    enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", False)
+    enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", True)
 
     n = Param(pdt.TypeInt, "Number of points for rounding", 64)
 
@@ -59,6 +60,7 @@ class DoubleRes2(Element):
 
         self.insert_cell(CoupledInductor, pya.DCplxTrans(1, 0, False, 0.0, 0.0), "main_inductor",
                          ground_cutout_height=self.l_ground_cutout_height,
+                         ground_cutout_width=self.l_ground_cutout_width,
                          feedline_spacing=self.feedline_spacing,
                          feedline_coupling_ground_spacing=self.feedline_coupling_ground_spacing,
                          l_tot_length=self.l_tot_length,
@@ -133,9 +135,9 @@ class DoubleRes2(Element):
 
         # Add mesh control regions for fine-grained ANSYS mesh refinement
         # Disabled for Q3D ACRL simulations due to ANSYS bug with mesh layer deletion
-        if self.enable_mesh_layers:
+        #if self.enable_mesh_layers:
             # mesh_2: Mesh over inductor region
-            self.cell.shapes(self.get_layer("mesh_2")).insert(inductor_region)
+        #    self.cell.shapes(self.get_layer("mesh_2")).insert(inductor_region)
 
         # Add named ACRL source/sink refpoints for Q3D inductance measurements
         # These refpoints will be automatically detected by get_acrl_sim_class()

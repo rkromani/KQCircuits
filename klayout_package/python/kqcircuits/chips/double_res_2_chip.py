@@ -302,6 +302,49 @@ class DoubleRes2Chip(Chip):
                     r=20
                 )
 
+
+        bottom_dr_order = [10, 7, 9, 6, 8]
+
+        i = 0
+        while i < len(bottom_dr_order) - 1:
+
+            if flip_bools[bottom_dr_order[i]]:
+                left = "right"
+            else:
+                left = "left"
+            if flip_bools[bottom_dr_order[i + 1]]:
+                right = "right"
+            else:
+                right = "left"
+
+            self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[Node(self.refpoints[f"T{bottom_dr_order[i]}_port_{left}"]), 
+                           Node(pya.DPoint(self.refpoints[f"T{bottom_dr_order[i]}_port_{left}"].x + bias_line_offset_x, self.refpoints[f"T{bottom_dr_order[i]}_port_{left}"].y)), 
+                           Node(pya.DPoint(self.refpoints[f"T{bottom_dr_order[i]}_port_{left}"].x + bias_line_offset_x, bottom_res_center_y)), 
+                           Node(pya.DPoint(self.refpoints[f"T{bottom_dr_order[i + 1]}_port_{right}"].x - bias_line_offset_x, bottom_res_center_y)), 
+                           Node(pya.DPoint(self.refpoints[f"T{bottom_dr_order[i + 1]}_port_{right}"].x - bias_line_offset_x, self.refpoints[f"T{bottom_dr_order[i + 1]}_port_{right}"].y)), 
+                           Node(self.refpoints[f"T{bottom_dr_order[i + 1]}_port_{right}"]), 
+                    ], 
+                    r=20
+                )
+            i += 1
+
+        bias_top_middle_x = (self.refpoints[f"T{bottom_dr_order[-1]}_port_left"].x + self.refpoints[f"W1_port"].x)/2
+        self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[Node(self.refpoints[f"T{bottom_dr_order[-1]}_port_right"]),
+                           Node(pya.DPoint(bias_top_middle_x, self.refpoints[f"T{bottom_dr_order[-1]}_port_right"].y)),
+                           Node(pya.DPoint(bias_top_middle_x, self.refpoints[f"W1_port"].y)),
+                           Node(self.refpoints[f"W1_port"]),
+                            ],
+                    r=20
+                )
+
+        
+        
+
+        
         
         
 

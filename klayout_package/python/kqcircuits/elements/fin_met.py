@@ -47,7 +47,7 @@ class FinMet(Element):
     coupler_width = Param(pdt.TypeDouble, "Width of coupling capacitor", 10, unit="μm")
     coupler_lead_in = Param(pdt.TypeDouble, "Length of coupling capacitor lead-in", 200, unit="μm")
     met_lead_in = Param(pdt.TypeDouble, "Length of MET lead-in", 20, unit="μm")
-    ground_gap_length = Param(pdt.TypeDouble, "Length of ground gap for coupling capacitor and MET", 50, unit="μm")
+    ground_gap_length = Param(pdt.TypeDouble, "Length of ground gap for coupling capacitor and MET", 80, unit="μm")
 
     fin_met_thickness = Param(pdt.TypeDouble, "Thickness of MET fin", 0.125, unit="μm")
     fin_coupler_thickness = Param(pdt.TypeDouble, "Thickness of coupler fin", 0.35, unit="μm")
@@ -93,7 +93,7 @@ class FinMet(Element):
         node_coupling_feedline_start = Node(pya.DPoint(self.fin_center_spacing/2 + self.coupler_lead_in - self.res_coupling_length, -self.res_coupling_spacing))
         node_coupling_feedline_end = Node(pya.DPoint(self.fin_center_spacing/2 + self.coupler_lead_in, -self.res_coupling_spacing))
         node_coupling_cap_start = Node(pya.DPoint(self.fin_center_spacing/2 + self.coupler_lead_in, self.fin_center_to_feedline))
-        node_coupling_cap_end = Node(pya.DPoint(self.fin_center_spacing/2 + self.fin_coupler_thickness/2, -self.fin_center_to_feedline))
+        node_coupling_cap_end = Node(pya.DPoint(self.fin_center_spacing/2 + self.fin_coupler_thickness/2 + self.met_lead_in/2, -self.fin_center_to_feedline))
         
         def my_route(extra_length):
             return [
@@ -137,8 +137,12 @@ class FinMet(Element):
         
         coupler_center_pts = [
             pya.DPoint(0, -self.fin_center_to_feedline + self.coupler_width/2),
-            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in, -self.fin_center_to_feedline + self.coupler_width/2),
-            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in, -self.fin_center_to_feedline - self.coupler_width/2),
+            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in/2, -self.fin_center_to_feedline + self.coupler_width/2),
+            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in/2, -self.fin_center_to_feedline + self.a/2),
+            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in, -self.fin_center_to_feedline + self.a/2),
+            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in, -self.fin_center_to_feedline - self.a/2),
+            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in/2, -self.fin_center_to_feedline - self.a/2),
+            pya.DPoint(self.fin_center_spacing/2 + self.met_lead_in/2, -self.fin_center_to_feedline - self.coupler_width/2),
             pya.DPoint(0, -self.fin_center_to_feedline - self.coupler_width/2)
         ]
         coupler_center_region = pya.Region(pya.DPolygon(coupler_center_pts).to_itype(self.layout.dbu))

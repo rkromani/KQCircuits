@@ -77,6 +77,9 @@ class MaskLayout:
         mask_name_offset: (DEPRECATED) mask name label offset from default position (DPoint)
         mask_name_scale: text scaling factor for mask name label (float)
         mask_name_box_margin: margin around the mask name that determines the box size around the name (float)
+        mask_name_label: if True (default), adds mask name label at top of wafer. Set False to disable.
+        center_on_wafer: if True, centers the chip grid on the wafer. For even grid dimensions (e.g., 8x8),
+            chip edges align with the wafer center. For odd dimensions (e.g., 9x9), one chip is centered.
         mask_text_scale: text scaling factor for graphical representation layer (float)
         mask_markers_dict: dictionary of all markers to be placed and kwargs to determine their position (dict)
         mask_marker_offset: offset of mask markers from wafer center in horizontal and vertical directions (float)
@@ -135,6 +138,8 @@ class MaskLayout:
         self.mask_name_offset = kwargs.get("mask_name_offset", pya.DPoint(0, 0))  # DEPRECATED
         self.mask_name_scale = kwargs.get("mask_name_scale", 1)
         self.mask_name_box_margin = kwargs.get("mask_name_box_margin", 1000)
+        self.mask_name_label = kwargs.get("mask_name_label", True)  # Set False to disable mask name label
+        self.center_on_wafer = kwargs.get("center_on_wafer", False)  # Center the chip grid on the wafer
         self.mask_text_scale = kwargs.get("mask_text_scale", default_mask_parameters[self.face_id]["mask_text_scale"])
         self.mask_markers_dict = kwargs.get("mask_markers_dict", {Marker: {}, MaskMarkerFc: {}})
         self.mask_markers_type = kwargs.get("mask_markers_type", "all")
@@ -241,7 +246,11 @@ class MaskLayout:
         maskextra_cell: pya.Cell = self.layout.create_cell("MaskExtra")
         marker_region = self._add_all_markers_to_mask(maskextra_cell)
 
-        self._insert_mask_name_label(self.top_cell, default_layers["mask_graphical_rep"], "G")
+        if self.mask_name_label:
+            self._insert_mask_name_label(self.top_cell, default_layers["mask_graphical_rep"], "G")
+        else:
+            # Set to wafer_rad so no chips are excluded at the top due to label
+            self._mask_name_box_bottom_y = self.wafer_rad
         # add chips from chips_map
         if isinstance(self.chips_map, dict):
             self._add_chips_map_dict(self.chip_size, marker_region)
@@ -500,6 +509,11 @@ class MaskLayout:
         orig = pya.DVector(-self.wafer_rad, self.wafer_rad) - self.chips_map_offset
         if align_to:
             orig = pya.DVector(*align_to)
+        elif self.center_on_wafer:
+            # Center the grid on the wafer (0, 0)
+            num_cols = len(chips_map[0]) if chips_map else 0
+            num_rows = len(chips_map)
+            orig = pya.DVector(-num_cols * chip_width / 2, num_rows * chip_height / 2)
         elif align:  # autoalign to the specified side of the existing layout
             w = len(chips_map[0]) * chip_width / 2
             h = len(chips_map) * chip_height
@@ -590,17 +604,18 @@ class MaskLayout:
     def _mask_create_covered_region(self, maskextra_cell, region_covered, layers_dict):
         dbu = self.layout.dbu
 
-        leftmost_label_x = 1e10
-        labels = []
-        for layer, postfix in layers_dict.items():
-            label_cell, label_trans = self._create_mask_name_label(self.face()[layer], postfix)
-            leftmost_label_x = min(label_trans.disp.x, leftmost_label_x)
-            labels.append((label_cell, label_trans))
-        # align left edges of mask name labels in different layers
-        for label_cell, label_trans in labels:
-            label_trans = pya.DTrans(label_trans.rot, label_trans.is_mirror(), leftmost_label_x, label_trans.disp.y)
-            inst = maskextra_cell.insert(pya.DCellInstArray(label_cell.cell_index(), label_trans))
-            region_covered -= pya.Region(inst.bbox()).extents(self.mask_name_box_margin / dbu)
+        if self.mask_name_label:
+            leftmost_label_x = 1e10
+            labels = []
+            for layer, postfix in layers_dict.items():
+                label_cell, label_trans = self._create_mask_name_label(self.face()[layer], postfix)
+                leftmost_label_x = min(label_trans.disp.x, leftmost_label_x)
+                labels.append((label_cell, label_trans))
+            # align left edges of mask name labels in different layers
+            for label_cell, label_trans in labels:
+                label_trans = pya.DTrans(label_trans.rot, label_trans.is_mirror(), leftmost_label_x, label_trans.disp.y)
+                inst = maskextra_cell.insert(pya.DCellInstArray(label_cell.cell_index(), label_trans))
+                region_covered -= pya.Region(inst.bbox()).extents(self.mask_name_box_margin / dbu)
 
         circle = pya.DTrans(self.wafer_center) * pya.DPath(
             [
