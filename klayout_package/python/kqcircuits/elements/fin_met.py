@@ -25,6 +25,7 @@ from kqcircuits.util.parameters import Param, pdt, add_parameters_from
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.util.refpoints import RefpointToInternalPort
+from kqcircuits.util.label import produce_label, LabelOrigin
 
 import numpy as np
 import math
@@ -54,6 +55,13 @@ class FinMet(Element):
     fin_length = Param(pdt.TypeDouble, "Length of fins", 350, unit="μm")
     fin_center_to_feedline = Param(pdt.TypeDouble, "Distance from center of fin center to feedline center", 3370/2, unit="μm")
     fin_center_spacing = Param(pdt.TypeDouble, "Spacing between fins", 25, unit="μm")
+    fin_dbexpose_width = Param(pdt.TypeDouble, "Width of double expose region around fins", 10, unit="μm")
+
+    enable_resistance_probe = Param(pdt.TypeBoolean, "Whether to add probe structures for resistance measurements", False)
+    probe_lead_length = Param(pdt.TypeDouble, "Length of probe leads", 1000, unit="μm")
+    probe_pad_size = Param(pdt.TypeDouble, "Size of probe pads", 200, unit="μm")
+    probe_region_offset = Param(pdt.TypeDouble, "Offset of probed region from fin center", 100, unit="μm")
+    probe_region_width = Param(pdt.TypeDouble, "Width of probed region", 10, unit="μm")
 
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", False)
     enable_rlc = Param(pdt.TypeBoolean, "Whether to add RLC elements for modeling", False)
@@ -175,10 +183,53 @@ class FinMet(Element):
             fin_met_region_ = pya.Region()
             fin_coupler_region_ = pya.Region()
 
+        if self.enable_resistance_probe:
+            resistance_probe_region, resistance_probe_region_dbl_expose = self.get_resistance_probe_region()
+        else:
+            resistance_probe_region = pya.Region()
+            resistance_probe_region_dbl_expose = pya.Region()
+
 
         self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
-            feedline_region + met_gap_region - met_center_region + coupler_gap_region - coupler_center_region + fin_met_region_ + fin_coupler_region_
+            feedline_region + met_gap_region - met_center_region + coupler_gap_region - coupler_center_region + fin_met_region_ + fin_coupler_region_ + resistance_probe_region
         )
+
+
+        #region for double exposing around fins
+        pts_dbexpose_met_top = [
+            pya.DPoint(fin_met_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.met_width/2),
+            pya.DPoint(fin_met_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.met_width/2),
+            pya.DPoint(fin_met_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.ground_gap_length/2),
+            pya.DPoint(fin_met_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.ground_gap_length/2)
+        ]
+        region_dbexpose_met_top = pya.Region(pya.DPolygon(pts_dbexpose_met_top).to_itype(self.layout.dbu))
+        pts_dbexpose_met_bottom = [
+            pya.DPoint(fin_met_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.met_width/2),
+            pya.DPoint(fin_met_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.met_width/2),
+            pya.DPoint(fin_met_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.ground_gap_length/2),
+            pya.DPoint(fin_met_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.ground_gap_length/2)
+        ]
+        region_dbexpose_met_bottom = pya.Region(pya.DPolygon(pts_dbexpose_met_bottom).to_itype(self.layout.dbu))
+        
+        pts_dbexpose_coupler_top = [
+            pya.DPoint(fin_coupler_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.coupler_width/2),
+            pya.DPoint(fin_coupler_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.coupler_width/2),
+            pya.DPoint(fin_coupler_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.ground_gap_length/2),
+            pya.DPoint(fin_coupler_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline + self.ground_gap_length/2)
+        ]
+        region_dbexpose_coupler_top = pya.Region(pya.DPolygon(pts_dbexpose_coupler_top).to_itype(self.layout.dbu))
+        pts_dbexpose_coupler_bottom = [
+            pya.DPoint(fin_coupler_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.coupler_width/2),
+            pya.DPoint(fin_coupler_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.coupler_width/2),
+            pya.DPoint(fin_coupler_center_x + self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.ground_gap_length/2),
+            pya.DPoint(fin_coupler_center_x - self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.ground_gap_length/2)
+        ]
+        region_dbexpose_coupler_bottom = pya.Region(pya.DPolygon(pts_dbexpose_coupler_bottom).to_itype(self.layout.dbu))
+
+        self.cell.shapes(self.get_layer("SIS_shadow")).insert(
+            region_dbexpose_met_top + region_dbexpose_met_bottom + region_dbexpose_coupler_top + region_dbexpose_coupler_bottom + resistance_probe_region_dbl_expose
+        )
+
 
         rlc_met_pts = [
             pya.DPoint(-self.fin_center_spacing/2 - self.fin_met_thickness, -self.fin_center_to_feedline + self.met_width/2),
@@ -332,6 +383,122 @@ class FinMet(Element):
             cutout_region = pya.Region()
 
         return top_region + bottom_region + cutout_region
+    
+    def get_resistance_probe_region(self):
+
+        # Define the probe region as a rectangle centered on the fin
+        probe_region_pts = [
+            pya.DPoint(-self.fin_center_spacing - self.a/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2),
+            pya.DPoint(self.fin_center_spacing + self.a/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2),
+            pya.DPoint(self.fin_center_spacing + self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.fin_center_spacing - self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.fin_center_spacing - self.a/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.a/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.a/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.fin_center_spacing + self.a/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.fin_center_spacing + self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.fin_center_spacing - self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.fin_center_spacing - self.a/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+        ]
+        probe_region_metal = pya.Region(pya.DPolygon(probe_region_pts).to_itype(self.layout.dbu))
+        probe_region_gap = pya.Region(pya.DPolygon([
+            pya.DPoint(-self.fin_center_spacing - self.a/2 - self.b, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2 + self.b),
+            pya.DPoint(self.fin_center_spacing + self.a/2 + self.b, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2 + self.b),
+            pya.DPoint(self.fin_center_spacing + self.a/2 + self.b, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2 - self.b),
+            pya.DPoint(-self.fin_center_spacing - self.a/2 - self.b, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2 - self.b),
+        ]).to_itype(self.layout.dbu))
+
+        pads_pts_l = [
+            pya.DPoint(-self.fin_center_spacing + self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.fin_center_spacing - self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.probe_pad_size * 2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+            pya.DPoint(-self.probe_pad_size * 2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size),
+            pya.DPoint(-self.probe_pad_size * 1, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size),
+            pya.DPoint(-self.probe_pad_size * 1, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+        ]
+
+        pads_pts_r = [
+            pya.DPoint(self.fin_center_spacing - self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.fin_center_spacing + self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.probe_pad_size * 2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+            pya.DPoint(self.probe_pad_size * 2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size),
+            pya.DPoint(self.probe_pad_size * 1, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size),
+            pya.DPoint(self.probe_pad_size * 1, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+        ]
+
+        pad_pts_c = [
+            pya.DPoint(-self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.a/2, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.probe_pad_size * 1/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+            pya.DPoint(self.probe_pad_size * 1/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size),
+            pya.DPoint(self.probe_pad_size * -1/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size),
+            pya.DPoint(self.probe_pad_size * -1/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+        ]
+
+        pad_gap_pts = [
+            pya.DPoint(self.fin_center_spacing + self.a/2 + self.b, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2 + self.b),
+            pya.DPoint(-self.fin_center_spacing - self.a/2 - self.b, -self.fin_center_to_feedline -2*self.probe_region_offset - self.probe_region_width/2 + self.b),
+            pya.DPoint(-self.probe_pad_size * 2.5, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+            pya.DPoint(-self.probe_pad_size * 2.5, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size*1.25),
+            pya.DPoint(self.probe_pad_size * 2.5, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length - self.probe_pad_size*1.25),
+            pya.DPoint(self.probe_pad_size * 2.5, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_lead_length),
+        ]
+        pads_region_l = pya.Region(pya.DPolygon(pads_pts_l).to_itype(self.layout.dbu))
+        pads_region_r = pya.Region(pya.DPolygon(pads_pts_r).to_itype(self.layout.dbu))
+        pads_region_c = pya.Region(pya.DPolygon(pad_pts_c).to_itype(self.layout.dbu))
+        pads_region = pads_region_l + pads_region_r + pads_region_c
+        pad_gap_region = pya.Region(pya.DPolygon(pad_gap_pts).to_itype(self.layout.dbu))
+
+        probe_extra_etch_tl_pts = [
+            pya.DPoint(-self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2),
+            pya.DPoint(-self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2 + self.b),
+            pya.DPoint(-self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2 + self.b),
+            pya.DPoint(-self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2),
+        ]
+        probe_extra_etch_tr_pts = [
+            pya.DPoint(self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2),
+            pya.DPoint(self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2 + self.b),
+            pya.DPoint(self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2 + self.b),
+            pya.DPoint(self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset + self.probe_region_width/2),
+        ]
+        probe_extra_etch_bl_pts = [
+            pya.DPoint(-self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(-self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.fin_length/2 - self.b),
+            pya.DPoint(-self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.fin_length/2 - self.b),
+            pya.DPoint(-self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+        ]
+        probe_extra_etch_br_pts = [
+            pya.DPoint(self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+            pya.DPoint(self.fin_center_spacing/2 - self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.fin_length/2 - self.b),
+            pya.DPoint(self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline - self.fin_length/2 - self.b),
+            pya.DPoint(self.fin_center_spacing/2 + self.fin_dbexpose_width/2, -self.fin_center_to_feedline -self.probe_region_offset - self.probe_region_width/2),
+        ]
+        probe_extra_etch_tl_region = pya.Region(pya.DPolygon(probe_extra_etch_tl_pts).to_itype(self.layout.dbu))
+        probe_extra_etch_tr_region = pya.Region(pya.DPolygon(probe_extra_etch_tr_pts).to_itype(self.layout.dbu))
+        probe_extra_etch_bl_region = pya.Region(pya.DPolygon(probe_extra_etch_bl_pts).to_itype(self.layout.dbu))
+        probe_extra_etch_br_region = pya.Region(pya.DPolygon(probe_extra_etch_br_pts).to_itype(self.layout.dbu))
+        probe_extra_etch_region = probe_extra_etch_tl_region + probe_extra_etch_tr_region + probe_extra_etch_bl_region + probe_extra_etch_br_region
+
+        produce_label(
+            self.cell,
+            label=f"{self.probe_region_width}um",
+            location=pya.DPoint(
+                self.fin_center_spacing + self.a/2 + self.b + 200,
+                -self.fin_center_to_feedline - self.probe_region_offset
+            ),
+            origin=LabelOrigin.TOPLEFT,
+            origin_offset=0,
+            margin=10,
+            layers=[self.layout.get_info(self.get_layer("base_metal_gap_wo_grid"))],
+            layer_protection=self.layout.get_info(self.get_layer("ground_grid_avoidance")),
+            size=90,
+        )
+
+        return (probe_region_gap + pad_gap_region - probe_region_metal - pads_region), probe_extra_etch_region
+
+
 
     def _arc_points(self, center_x, center_y, r, theta0, theta1, n):
         #theta = 0 is (1,0) directionreturn [

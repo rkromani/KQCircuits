@@ -52,6 +52,7 @@ from kqcircuits.elements.flip_chip_connectors.flip_chip_connector import FlipChi
     "name_chip",
     "name_copy",
     "name_brand",
+    "name_brand_size",
     "chip_dicing_in_base_metal",
     "dice_grid_margin",
     marker_types=[default_marker_type] * 8,

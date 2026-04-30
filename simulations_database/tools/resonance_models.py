@@ -97,9 +97,9 @@ def fit_s21_resonance(freq: np.ndarray, s21_complex: np.ndarray,
         return np.concatenate([np.real(s21), np.imag(s21)])
 
     # Bounds to keep parameters physical
-    # f0: within frequency range, eta: 0-1, kappa: positive, ampl_max: 0-10, phi_bg: -pi to pi
-    lower_bounds = [freq[0], 0.01, 1e6, 0.1, -np.pi]
-    upper_bounds = [freq[-1], 0.99, 1e12, 10, np.pi]
+    # f0: within frequency range, eta: 0-1, kappa: positive (1e4 allows high-Q resonators), ampl_max: 0-10, phi_bg: -pi to pi
+    lower_bounds = [freq[0], 0.01, 1e4, 0.1, -np.pi]
+    upper_bounds = [freq[-1], 0.9999, 1e12, 10, np.pi]
 
     try:
         popt, pcov = curve_fit(

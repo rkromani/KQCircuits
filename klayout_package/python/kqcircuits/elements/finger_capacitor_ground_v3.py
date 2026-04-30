@@ -58,6 +58,9 @@ class FingerCapacitorGroundV3(Element):
         ground_width = self.a + 2 * (self.finger_length + self.finger_gap)
         ground_length = self.finger_number * 2 * (self.finger_width + self.finger_gap)
 
+        self.refpoints['top_port'] = pya.DPoint(0, 0)
+        self.refpoints['bottom_port'] = pya.DPoint(0, -ground_length)
+
         if self.use_lumped_model:
             # LUMPED MODEL MODE: Create geometry on lumped_rlc layer for boundary attachment
             # This layer exports to ANSYS as a non-model surface that lumped RLC boundaries attach to

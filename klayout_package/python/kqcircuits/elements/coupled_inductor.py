@@ -37,7 +37,7 @@ class CoupledInductor(Element):
     ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout", 1100, unit="μm")
     ground_radius = Param(pdt.TypeDouble, "Radius of ground cutout corners", 10, unit="μm")
 
-    feedline_length = Param(pdt.TypeDouble, "Feedline length", 800, unit="μm")
+    feedline_length = Param(pdt.TypeDouble, "Feedline length", 1600, unit="μm")
     feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 10, unit="μm")
     feedline_coupling_ground_spacing = Param(pdt.TypeDouble, "Feedline coupling ground spacing", 10, unit="μm")
     feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
@@ -53,6 +53,7 @@ class CoupledInductor(Element):
     l_connection_spacing = Param(pdt.TypeDouble, "Spacing between inductors two connections", 200, unit="μm")
 
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", True)
+    enable_feedline_termination = Param(pdt.TypeBoolean, "Whether to terminate the feedline with RLC sim elements", False)
     sim_gap = Param(pdt.TypeBoolean, "Gap for ACRL simulation", False)
 
     n = Param(pdt.TypeInt, "Number of points for rounding", 64)
@@ -104,6 +105,34 @@ class CoupledInductor(Element):
             # mesh_2: Mesh over inductor region
             #self.cell.shapes(self.get_layer("mesh_2")).insert(inductor_region)
             self.cell.shapes(self.get_layer("mesh_1")).insert(coupling_mesh_region)
+
+        if self.enable_feedline_termination and self.feedline_cutout_bool:
+            rlc_left_pts = [
+                pya.DPoint(-self.feedline_length/2 + self.feedline_cutout/4, -self.a/2),
+                pya.DPoint(-self.feedline_length/2 + self.feedline_cutout/4, self.a/2),
+                pya.DPoint(-self.feedline_length/2 - 5*self.feedline_cutout/4, self.a/2),
+                pya.DPoint(-self.feedline_length/2 - 5*self.feedline_cutout/4, -self.a/2)
+            ]
+            rlc_left_region = pya.Region(pya.DPolygon(rlc_left_pts).to_itype(self.layout.dbu))
+
+            rlc_right_pts = [
+                pya.DPoint(self.feedline_length/2 - self.feedline_cutout/4, -self.a/2),
+                pya.DPoint(self.feedline_length/2 - self.feedline_cutout/4, self.a/2),
+                pya.DPoint(self.feedline_length/2 + 5*self.feedline_cutout/4, self.a/2),
+                pya.DPoint(self.feedline_length/2 + 5*self.feedline_cutout/4, -self.a/2)
+            ]
+            rlc_right_region = pya.Region(pya.DPolygon(rlc_right_pts).to_itype(self.layout.dbu))
+
+            rlc_region = rlc_left_region + rlc_right_region
+            self.cell.shapes(self.get_layer("lumped_rlc")).insert(rlc_region)
+
+            # Refpoints for InternalPort placement in ANSYS eigenmode simulations.
+            # Signal is on the center conductor (y=0); ground is on the bottom ground plane.
+            # Placed at the inner edge of each cutout so they sit on actual metal.
+            self.refpoints["feedline_a_signal"] = pya.DPoint(-self.feedline_length/2, 0)
+            self.refpoints["feedline_a_ground"] = pya.DPoint(-self.feedline_length/2 - self.feedline_cutout, 0)
+            self.refpoints["feedline_b_signal"] = pya.DPoint(self.feedline_length/2, 0)
+            self.refpoints["feedline_b_ground"] = pya.DPoint(self.feedline_length/2 + self.feedline_cutout, 0)
 
         # Add named ACRL source/sink refpoints for Q3D inductance measurements
         # These refpoints will be automatically detected by get_acrl_sim_class()

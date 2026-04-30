@@ -41,6 +41,7 @@ def produce_label(
     layer_protection,
     size=350,
     mirror=False,
+    rotation=0,
 ):
     """Produces a Text PCell accounting for desired relative position of the text respect to the given location
     and the spacing.
@@ -56,6 +57,7 @@ def produce_label(
         layer_protection: layer where a box around the label text is added
         size: Character height in um, default 350
         mirror: mirror label
+        rotation: text rotation as pya.Trans rotation code (0=0deg, 1=90CCW, 2=180, 3=270CCW)
 
     Effect:
         Shapes added to the corresponding layers
@@ -75,6 +77,8 @@ def produce_label(
         protection_only = False
 
     polygon = get_text_polygon(label, size / 350 * 500)
+    if rotation:
+        polygon = polygon.transformed(pya.Trans(rotation, False, 0, 0))
     polygon_bbox = polygon.bbox().to_dtype(layout.dbu)
 
     # relative placement with margin

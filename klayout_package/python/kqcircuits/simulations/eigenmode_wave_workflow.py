@@ -223,6 +223,7 @@ def create_batch_file(
     output_dir,
     sweep_width,
     eigenmode_mode,
+    frequency_offset_factor=1.0,
     db_sweep_folder=None,
     ansys_wait_time=10,
 ):
@@ -256,7 +257,7 @@ def create_batch_file(
             f.write('echo.\n\n')
 
             for i, (eigen_json, wave_json) in enumerate(zip(eigenmode_json_files, wave_json_files)):
-                arg = f"{eigen_json};{wave_json};{sweep_width}"
+                arg = f"{eigen_json};{wave_json};{sweep_width};{frequency_offset_factor}"
                 # Log file is named after eigenmode simulation
                 eigen_basename = os.path.splitext(os.path.basename(eigen_json))[0]
                 log_file = f"{eigen_basename}_run.log"
@@ -281,7 +282,7 @@ def create_batch_file(
             eigen_basename = os.path.splitext(os.path.basename(shared_eigenmode_json))[0]
             log_file = f"{eigen_basename}_run.log"
             for i, wave_json in enumerate(wave_json_files):
-                arg = f"{shared_eigenmode_json};{wave_json};{sweep_width}"
+                arg = f"{shared_eigenmode_json};{wave_json};{sweep_width};{frequency_offset_factor}"
                 f.write(f'echo Simulation {i+1}/{len(wave_sims)}\n')
                 f.write(f'"{ANSYS_EXECUTABLE}" ')
                 f.write(f'-scriptargs "{arg}" -RunScript "{custom_script_path}"\n')
@@ -375,6 +376,7 @@ def run_eigenmode_wave_workflow(
     sweep_params,
     design_name,
     script_name=None,
+    frequency_offset_factor=1.0,
     args=None,
 ):
     """Run the complete eigenmode + wave simulation workflow.
@@ -538,6 +540,7 @@ def run_eigenmode_wave_workflow(
         output_dir=dir_path,
         sweep_width=args.sweep_width,
         eigenmode_mode=args.eigenmode_mode,
+        frequency_offset_factor=frequency_offset_factor,
         db_sweep_folder=sweep_folder,
     )
 
@@ -557,7 +560,7 @@ def run_eigenmode_wave_workflow(
     print(f"")
     print(f"Workflow:")
     print(f"  1. Run eigenmode -> extract resonance frequency")
-    print(f"  2. Configure wave sweep: f_res +/- {args.sweep_width/2} GHz")
+    print(f"  2. Configure wave sweep: f_res * {frequency_offset_factor} +/- {args.sweep_width/2} GHz")
     print(f"  3. Import mesh from eigenmode into wave setup")
     print(f"  4. Run wave simulation -> measure S21")
     print(f"")

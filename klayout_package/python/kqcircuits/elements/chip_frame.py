@@ -72,6 +72,7 @@ class ChipFrame(Element):
     chip_dicing_in_base_metal = Param(pdt.TypeBoolean, "Insert chip dicing lines in base metal addition", False)
     face_label_show = Param(pdt.TypeBoolean, "Show face label below variant label", True)
     face_label_size = Param(pdt.TypeDouble, "Vertical size of character in face label", 75, unit="µm")
+    name_brand_size = Param(pdt.TypeDouble, "Vertical size of character in brand label (0 = auto)", 0, unit="µm")
     face_label_margin = Param(
         pdt.TypeDouble,
         "Margin for face label, fills ground grid avoidance around label",
@@ -97,7 +98,8 @@ class ChipFrame(Element):
         if self.face_label_show:
             self._produce_face_label()
         self._produce_label(labels[2], pya.DPoint(x_max, y_min), LabelOrigin.BOTTOMRIGHT)
-        self._produce_label(labels[3], pya.DPoint(x_min, y_min), LabelOrigin.BOTTOMLEFT)
+        brand_size = self.name_brand_size if self.name_brand_size > 0 else None
+        self._produce_label(labels[3], pya.DPoint(x_min, y_min), LabelOrigin.BOTTOMLEFT, size=brand_size)
 
     def _produce_face_label(self):
         """Face label ('1t1', '2b1', etc) placed below the variant label

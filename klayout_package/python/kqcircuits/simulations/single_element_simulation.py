@@ -41,7 +41,7 @@ def _get_build_function(
             element_class, **{**self.get_parameters(), "junction_type": sim_junction_type, "fluxline_type": "none"}
         )
 
-        element_trans = pya.DTrans(0, False, self.box.center())
+        element_trans = pya.DTrans(0, False, pya.DVector(0, 0))
         if transformation_from_center is not None:
             element_trans *= transformation_from_center(simulation_cell)
         _, refp = self.insert_cell(simulation_cell, element_trans, rec_levels=None)

@@ -125,7 +125,8 @@ def plot_individual_s21_fit(freq: np.ndarray, s21_data: np.ndarray,
     freq_zoom_smooth = np.linspace(f_min * 1e9, f_max * 1e9, 1000)
     s21_fit_zoom_smooth = lorentzian_s21(freq_zoom_smooth, *fit_params)
 
-    if np.sum(zoom_mask) > 3:  # Only create zoom plot if enough points (reduced threshold for low-res data)
+    # Always create zoom plot regardless of number of points
+    if True:  # Always create zoom plot
         fig_zoom, (ax1_zoom, ax2_zoom) = plt.subplots(2, 1, figsize=(10, 8))
 
         # Zoomed magnitude
@@ -164,13 +165,22 @@ def plot_individual_s21_fit(freq: np.ndarray, s21_data: np.ndarray,
 
 def plot_sweep_summary(sim_names: List[str], param_values: np.ndarray,
                       fit_results: List[Dict], param_name: str,
-                      plots_folder: Path):
+                      plots_folder: Path, show_internal: bool = False):
     """
     Generate sweep-level plots of fitted parameters vs swept parameter.
+
+    Args:
+        show_internal: If True, plot kappa_internal and Q_internal. If False (default), only plot external values.
     """
     # Extract successful fits
     success_mask = np.array([r['success'] for r in fit_results])
     param_values_success = param_values[success_mask]
+
+    # Check if parameter is boolean - if so, skip plotting
+    unique_values = np.unique(param_values_success)
+    if len(unique_values) <= 2 and all(isinstance(v, (bool, np.bool_)) or v in [0, 1, True, False] for v in unique_values):
+        logger.info(f"Skipping plots for boolean parameter: {param_name}")
+        return
 
     f_res = np.array([r['f_res'] for r in fit_results if r['success']]) / 1e9
     kappa_ext = np.array([r['kappa_ext'] for r in fit_results if r['success']]) / 1e6
@@ -194,8 +204,9 @@ def plot_sweep_summary(sim_names: List[str], param_values: np.ndarray,
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(param_values_success, kappa_ext, 'o-', markersize=8,
             linewidth=2, label='kappa_ext')
-    ax.plot(param_values_success, kappa_int, 's-', markersize=8,
-            linewidth=2, label='kappa_int')
+    if show_internal:
+        ax.plot(param_values_success, kappa_int, 's-', markersize=8,
+                linewidth=2, label='kappa_int')
     ax.set_xlabel(param_name)
     ax.set_ylabel('Coupling Rate (MHz)')
     ax.set_title(f'Coupling Rates vs {param_name}')
@@ -209,8 +220,9 @@ def plot_sweep_summary(sim_names: List[str], param_values: np.ndarray,
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(param_values_success, Q_ext, 'o-', markersize=8,
             linewidth=2, label='Q_ext')
-    ax.plot(param_values_success, Q_int, 's-', markersize=8,
-            linewidth=2, label='Q_int')
+    if show_internal:
+        ax.plot(param_values_success, Q_int, 's-', markersize=8,
+                linewidth=2, label='Q_int')
     ax.plot(param_values_success, Q_total, '^-', markersize=8,
             linewidth=2, label='Q_total')
     ax.set_xlabel(param_name)
@@ -222,6 +234,355 @@ def plot_sweep_summary(sim_names: List[str], param_values: np.ndarray,
     plt.tight_layout()
     plt.savefig(plots_folder / f'Q_factors_vs_{param_name}.png', dpi=150)
     plt.close()
+
+
+def plot_multiparameter_sweep_grouped(simulations: List[Dict], fit_results: List[Dict],
+                                      varied_params: Dict, plots_folder: Path,
+                                      show_internal: bool = False):
+    """
+    Generate grouped plots for multi-parameter sweeps.
+    For each parameter, plots fit results vs that parameter with different colored lines
+    for each unique value of the other parameters.
+
+    Args:
+        simulations: List of simulation info dictionaries
+        fit_results: List of fit result dictionaries
+        varied_params: Dictionary of varied parameter names and their ranges
+        plots_folder: Path to save plots
+        show_internal: If True, include internal coupling/Q plots
+    """
+    param_names = list(varied_params.keys())
+
+    if len(param_names) < 2:
+        # Need at least 2 parameters for grouped plotting
+        return
+
+    # Extract all parameter values for each simulation
+    all_param_values = {param: [] for param in param_names}
+    for sim in simulations:
+        for i, param_name in enumerate(param_names):
+            if 'varied_values' in sim:
+                all_param_values[param_name].append(sim['varied_values'][i])
+            elif param_name in sim:
+                all_param_values[param_name].append(sim[param_name])
+            else:
+                all_param_values[param_name].append(None)
+
+    # Convert to numpy arrays
+    for param in param_names:
+        all_param_values[param] = np.array(all_param_values[param])
+
+    # Filter out boolean parameters and parameters with only 1 unique value
+    numeric_params = []
+    for param_name in param_names:
+        unique_vals = np.unique(all_param_values[param_name])
+        # Skip if only 1 unique value
+        if len(unique_vals) <= 1:
+            logger.info(f"Skipping {param_name} (only 1 unique value)")
+            continue
+        # Skip if boolean (2 values that are True/False or 0/1)
+        if len(unique_vals) == 2:
+            # Check if boolean-like
+            vals_set = set(unique_vals)
+            if vals_set <= {True, False, 0, 1, 'true', 'false', 'True', 'False'}:
+                logger.info(f"Skipping {param_name} (boolean parameter)")
+                continue
+        numeric_params.append(param_name)
+
+    logger.info(f"Numeric parameters for grouped plotting: {numeric_params}")
+
+    if len(numeric_params) < 2:
+        logger.info("Need at least 2 numeric parameters for grouped plotting")
+        return
+
+    # Extract fit results (using NaN for failed fits)
+    success_mask = np.array([r['success'] for r in fit_results])
+
+    f_res = np.array([r['f_res'] if r['success'] else np.nan for r in fit_results]) / 1e9
+    kappa_ext = np.array([r['kappa_ext'] if r['success'] else np.nan for r in fit_results]) / 1e6
+    kappa_int = np.array([r['kappa_int'] if r['success'] else np.nan for r in fit_results]) / 1e6
+    kappa_total = np.array([r['kappa_total'] if r['success'] else np.nan for r in fit_results]) / 1e6
+    Q_ext = np.array([r['Q_ext'] if r['success'] else np.nan for r in fit_results])
+    Q_int = np.array([r['Q_int'] if r['success'] else np.nan for r in fit_results])
+    Q_total = np.array([r['Q_total'] if r['success'] else np.nan for r in fit_results])
+
+    # Color palette for different groups
+    colors = plt.cm.tab10(np.linspace(0, 1, 10))
+
+    # For each numeric parameter, create grouped plots with other numeric parameters
+    for x_param in numeric_params:
+        # Use the other numeric parameters for grouping
+        other_params = [p for p in numeric_params if p != x_param]
+
+        # Handle case where we have exactly 1 other numeric parameter (2-param sweep)
+        if len(other_params) == 1:
+            group_param = other_params[0]
+            unique_groups = np.unique(all_param_values[group_param])
+
+            # Filter out None/NaN values from unique groups
+            unique_groups = [g for g in unique_groups if g is not None and not (isinstance(g, float) and np.isnan(g))]
+
+            logger.info(f"Creating grouped plots: {x_param} grouped by {group_param}")
+
+        elif len(other_params) > 1:
+            # Multiple other parameters - group by first numeric parameter, log the rest
+            group_param = other_params[0]
+            unique_groups = np.unique(all_param_values[group_param])
+
+            # Filter out None/NaN values
+            unique_groups = [g for g in unique_groups if g is not None and not (isinstance(g, float) and np.isnan(g))]
+
+            logger.info(f"Creating grouped plots: {x_param} grouped by {group_param}")
+            logger.info(f"  Note: Also varying {other_params[1:]}, but not shown in grouping")
+
+        else:
+            # No other parameters to group by - skip
+            continue
+
+        # Plot 1: f_res vs x_param, grouped by group_param
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for i, group_val in enumerate(unique_groups):
+            mask = (all_param_values[group_param] == group_val) & success_mask
+            if not np.any(mask):
+                continue
+
+            x_vals = all_param_values[x_param][mask]
+            y_vals = f_res[mask]
+
+            # Remove NaN values
+            valid = ~np.isnan(y_vals)
+            x_vals = x_vals[valid]
+            y_vals = y_vals[valid]
+
+            if len(x_vals) == 0:
+                continue
+
+            # Sort by x values for proper line plotting
+            sort_idx = np.argsort(x_vals)
+            x_vals_sorted = x_vals[sort_idx]
+            y_vals_sorted = y_vals[sort_idx]
+
+            ax.plot(x_vals_sorted, y_vals_sorted, 'o-', markersize=8,
+                   linewidth=2, color=colors[i % len(colors)],
+                   label=f'{group_param}={group_val}')
+
+        ax.set_xlabel(x_param)
+        ax.set_ylabel('Resonance Frequency (GHz)')
+        ax.set_title(f'Resonance Frequency vs {x_param} (grouped by {group_param})')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plots_folder / f'f_res_vs_{x_param}_by_{group_param}.png', dpi=150)
+        plt.close()
+
+        # Plot 2: kappa_ext vs x_param, grouped by group_param
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for i, group_val in enumerate(unique_groups):
+            mask = (all_param_values[group_param] == group_val) & success_mask
+            if not np.any(mask):
+                continue
+
+            x_vals = all_param_values[x_param][mask]
+            y_vals = kappa_ext[mask]
+
+            valid = ~np.isnan(y_vals)
+            x_vals = x_vals[valid]
+            y_vals = y_vals[valid]
+
+            if len(x_vals) == 0:
+                continue
+
+            sort_idx = np.argsort(x_vals)
+            x_vals_sorted = x_vals[sort_idx]
+            y_vals_sorted = y_vals[sort_idx]
+
+            ax.plot(x_vals_sorted, y_vals_sorted, 'o-', markersize=8,
+                   linewidth=2, color=colors[i % len(colors)],
+                   label=f'{group_param}={group_val}')
+
+        ax.set_xlabel(x_param)
+        ax.set_ylabel('External Coupling Rate (MHz)')
+        ax.set_title(f'Kappa_ext vs {x_param} (grouped by {group_param})')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plots_folder / f'kappa_ext_vs_{x_param}_by_{group_param}.png', dpi=150)
+        plt.close()
+
+        # Plot 3: kappa_total vs x_param, grouped by group_param
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for i, group_val in enumerate(unique_groups):
+            mask = (all_param_values[group_param] == group_val) & success_mask
+            if not np.any(mask):
+                continue
+
+            x_vals = all_param_values[x_param][mask]
+            y_vals = kappa_total[mask]
+
+            valid = ~np.isnan(y_vals)
+            x_vals = x_vals[valid]
+            y_vals = y_vals[valid]
+
+            if len(x_vals) == 0:
+                continue
+
+            sort_idx = np.argsort(x_vals)
+            x_vals_sorted = x_vals[sort_idx]
+            y_vals_sorted = y_vals[sort_idx]
+
+            ax.plot(x_vals_sorted, y_vals_sorted, 'o-', markersize=8,
+                   linewidth=2, color=colors[i % len(colors)],
+                   label=f'{group_param}={group_val}')
+
+        ax.set_xlabel(x_param)
+        ax.set_ylabel('Total Coupling Rate (MHz)')
+        ax.set_title(f'Kappa_total vs {x_param} (grouped by {group_param})')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plots_folder / f'kappa_total_vs_{x_param}_by_{group_param}.png', dpi=150)
+        plt.close()
+
+        # Plot 4: Q_total vs x_param, grouped by group_param
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for i, group_val in enumerate(unique_groups):
+            mask = (all_param_values[group_param] == group_val) & success_mask
+            if not np.any(mask):
+                continue
+
+            x_vals = all_param_values[x_param][mask]
+            y_vals = Q_total[mask]
+
+            valid = ~np.isnan(y_vals)
+            x_vals = x_vals[valid]
+            y_vals = y_vals[valid]
+
+            if len(x_vals) == 0:
+                continue
+
+            sort_idx = np.argsort(x_vals)
+            x_vals_sorted = x_vals[sort_idx]
+            y_vals_sorted = y_vals[sort_idx]
+
+            ax.plot(x_vals_sorted, y_vals_sorted, 'o-', markersize=8,
+                   linewidth=2, color=colors[i % len(colors)],
+                   label=f'{group_param}={group_val}')
+
+        ax.set_xlabel(x_param)
+        ax.set_ylabel('Quality Factor')
+        ax.set_title(f'Q_total vs {x_param} (grouped by {group_param})')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.set_yscale('log')
+        plt.tight_layout()
+        plt.savefig(plots_folder / f'Q_total_vs_{x_param}_by_{group_param}.png', dpi=150)
+        plt.close()
+
+        # Plot 5: Q_ext vs x_param, grouped by group_param
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for i, group_val in enumerate(unique_groups):
+            mask = (all_param_values[group_param] == group_val) & success_mask
+            if not np.any(mask):
+                continue
+
+            x_vals = all_param_values[x_param][mask]
+            y_vals = Q_ext[mask]
+
+            valid = ~np.isnan(y_vals)
+            x_vals = x_vals[valid]
+            y_vals = y_vals[valid]
+
+            if len(x_vals) == 0:
+                continue
+
+            sort_idx = np.argsort(x_vals)
+            x_vals_sorted = x_vals[sort_idx]
+            y_vals_sorted = y_vals[sort_idx]
+
+            ax.plot(x_vals_sorted, y_vals_sorted, 'o-', markersize=8,
+                   linewidth=2, color=colors[i % len(colors)],
+                   label=f'{group_param}={group_val}')
+
+        ax.set_xlabel(x_param)
+        ax.set_ylabel('External Quality Factor')
+        ax.set_title(f'Q_ext vs {x_param} (grouped by {group_param})')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.set_yscale('log')
+        plt.tight_layout()
+        plt.savefig(plots_folder / f'Q_ext_vs_{x_param}_by_{group_param}.png', dpi=150)
+        plt.close()
+
+        # Optional: internal coupling plots if requested
+        if show_internal:
+            # Plot 6: kappa_int vs x_param, grouped by group_param
+            fig, ax = plt.subplots(figsize=(10, 6))
+            for i, group_val in enumerate(unique_groups):
+                mask = (all_param_values[group_param] == group_val) & success_mask
+                if not np.any(mask):
+                    continue
+
+                x_vals = all_param_values[x_param][mask]
+                y_vals = kappa_int[mask]
+
+                valid = ~np.isnan(y_vals)
+                x_vals = x_vals[valid]
+                y_vals = y_vals[valid]
+
+                if len(x_vals) == 0:
+                    continue
+
+                sort_idx = np.argsort(x_vals)
+                x_vals_sorted = x_vals[sort_idx]
+                y_vals_sorted = y_vals[sort_idx]
+
+                ax.plot(x_vals_sorted, y_vals_sorted, 'o-', markersize=8,
+                       linewidth=2, color=colors[i % len(colors)],
+                       label=f'{group_param}={group_val}')
+
+            ax.set_xlabel(x_param)
+            ax.set_ylabel('Internal Coupling Rate (MHz)')
+            ax.set_title(f'Kappa_int vs {x_param} (grouped by {group_param})')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(plots_folder / f'kappa_int_vs_{x_param}_by_{group_param}.png', dpi=150)
+            plt.close()
+
+            # Plot 7: Q_int vs x_param, grouped by group_param
+            fig, ax = plt.subplots(figsize=(10, 6))
+            for i, group_val in enumerate(unique_groups):
+                mask = (all_param_values[group_param] == group_val) & success_mask
+                if not np.any(mask):
+                    continue
+
+                x_vals = all_param_values[x_param][mask]
+                y_vals = Q_int[mask]
+
+                valid = ~np.isnan(y_vals)
+                x_vals = x_vals[valid]
+                y_vals = y_vals[valid]
+
+                if len(x_vals) == 0:
+                    continue
+
+                sort_idx = np.argsort(x_vals)
+                x_vals_sorted = x_vals[sort_idx]
+                y_vals_sorted = y_vals[sort_idx]
+
+                ax.plot(x_vals_sorted, y_vals_sorted, 'o-', markersize=8,
+                       linewidth=2, color=colors[i % len(colors)],
+                       label=f'{group_param}={group_val}')
+
+            ax.set_xlabel(x_param)
+            ax.set_ylabel('Internal Quality Factor')
+            ax.set_title(f'Q_int vs {x_param} (grouped by {group_param})')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            ax.set_yscale('log')
+            plt.tight_layout()
+            plt.savefig(plots_folder / f'Q_int_vs_{x_param}_by_{group_param}.png', dpi=150)
+            plt.close()
 
 
 def process_simulation(sim_folder: Path, plots_folder: Path) -> Dict:
@@ -244,7 +605,8 @@ def process_simulation(sim_folder: Path, plots_folder: Path) -> Dict:
         logger.warning(f"No results folder found in {sim_folder}")
         return {'success': False, 'error': 'No results folder'}
 
-    s2p_files = list(results_folder.glob("*.s2p"))
+    # Search recursively for .s2p files (handles nested ANSYS export structures)
+    s2p_files = list(results_folder.glob("**/*.s2p"))
     if len(s2p_files) == 0:
         logger.warning(f"No .s2p files found in {results_folder}")
         return {'success': False, 'error': 'No .s2p file'}
@@ -267,11 +629,17 @@ def process_simulation(sim_folder: Path, plots_folder: Path) -> Dict:
         return fit_result
 
     # 4. Generate individual plot
-    plot_individual_s21_fit(
-        freq, s21, fit_result,
-        save_path=plots_folder / f"s21_fit_{sim_name}.png",
-        title=f"S21 Fit: {sim_name}"
-    )
+    try:
+        plot_individual_s21_fit(
+            freq, s21, fit_result,
+            save_path=plots_folder / f"s21_fit_{sim_name}.png",
+            title=f"S21 Fit: {sim_name}"
+        )
+        logger.info(f"  Generated S21 plots: s21_fit_{sim_name}.png and s21_fit_{sim_name}_zoom.png")
+    except Exception as e:
+        logger.error(f"  Failed to generate S21 plots: {e}")
+        import traceback
+        traceback.print_exc()
 
     # 5. Save fit results JSON
     fit_results_file = sim_folder / "fit_results.json"
@@ -364,9 +732,13 @@ def create_csv_summary(simulations: List[Dict], fit_results: List[Dict],
             writer.writerow(row)
 
 
-def process_sweep_folder(sweep_folder: Path):
+def process_sweep_folder(sweep_folder: Path, show_internal: bool = False):
     """
     Process all simulations in a sweep folder.
+
+    Args:
+        sweep_folder: Path to the sweep folder
+        show_internal: If True, plot kappa_internal and Q_internal. If False (default), only plot external values.
     """
     logger.info(f"Processing sweep folder: {sweep_folder}")
 
@@ -413,15 +785,23 @@ def process_sweep_folder(sweep_folder: Path):
         sim_names.append(sim_name)
 
     # 5. Generate sweep-level summary plots
-    if len(varied_params) == 1:
-        # Single parameter sweep
-        param_name = list(varied_params.keys())[0]
+    # Pre-filter to find which varied parameters are actually numeric (non-boolean)
+    def is_boolean_param(values):
+        unique = set(values)
+        return len(unique) <= 2 and unique <= {True, False, 0, 1}
+
+    numeric_params = {k: v for k, v in varied_params.items() if not is_boolean_param(v)}
+    logger.info(f"Numeric (non-boolean) varied parameters: {list(numeric_params.keys())}")
+
+    if len(numeric_params) == 1:
+        # Single numeric parameter sweep - use simple plots
+        param_name = list(numeric_params.keys())[0]
+        param_idx = list(varied_params.keys()).index(param_name)
         # Extract parameter values from simulation entries
-        # Format can be either sim['varied_values'][0] or sim[param_name]
         param_values = []
         for sim in simulations:
             if 'varied_values' in sim:
-                param_values.append(sim['varied_values'][0])
+                param_values.append(sim['varied_values'][param_idx])
             elif param_name in sim:
                 param_values.append(sim[param_name])
             else:
@@ -430,24 +810,15 @@ def process_sweep_folder(sweep_folder: Path):
         param_values = np.array(param_values)
 
         plot_sweep_summary(sim_names, param_values, fit_results,
-                          param_name, plots_folder)
+                          param_name, plots_folder, show_internal)
 
-    elif len(varied_params) > 1:
-        # Multi-parameter sweep: plot for each parameter separately
-        for i, param_name in enumerate(varied_params.keys()):
-            param_values = []
-            for sim in simulations:
-                if 'varied_values' in sim:
-                    param_values.append(sim['varied_values'][i])
-                elif param_name in sim:
-                    param_values.append(sim[param_name])
-                else:
-                    logger.warning(f"Could not find parameter {param_name} for {sim['name']}")
-                    param_values.append(None)
-            param_values = np.array(param_values)
-
-            plot_sweep_summary(sim_names, param_values, fit_results,
-                              param_name, plots_folder)
+    elif len(numeric_params) > 1:
+        # Multi-parameter sweep: use grouped plots
+        logger.info("Creating grouped multi-parameter plots...")
+        plot_multiparameter_sweep_grouped(simulations, fit_results, varied_params,
+                                         plots_folder, show_internal)
+    else:
+        logger.info("No numeric varied parameters found - skipping sweep-level plots")
 
     # 6. Create CSV summary
     csv_file = sweep_folder / "s21_fit_summary.csv"
@@ -464,6 +835,8 @@ if __name__ == '__main__':
     )
     parser.add_argument('sweep_folder', type=str,
                        help='Path to sweep folder containing simulations')
+    parser.add_argument('--show-internal', action='store_true',
+                       help='Include kappa_internal and Q_internal in plots (default: hide them)')
 
     args = parser.parse_args()
 
@@ -473,4 +846,4 @@ if __name__ == '__main__':
         logger.error(f"Sweep folder not found: {sweep_folder}")
         sys.exit(1)
 
-    process_sweep_folder(sweep_folder)
+    process_sweep_folder(sweep_folder, show_internal=args.show_internal)

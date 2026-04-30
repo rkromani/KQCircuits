@@ -170,6 +170,9 @@ def export_masks_of_face(export_dir, mask_layout, mask_set):
     # export .oas files for individual optical lithography layers
     for layer_name in mask_layout.mask_export_layers:
         export_mask(export_dir_for_face, layer_name, mask_layout, mask_set)
+    # export combined .oas with only the fab layers
+    if mask_layout.mask_export_layers:
+        export_mask_layers_combined(export_dir_for_face, mask_layout, mask_set)
 
     # Find area and density for the layers defined in mask_layout.mask_export_density_layers
     layer_infos = [
@@ -189,6 +192,60 @@ def export_masks_of_face(export_dir, mask_layout, mask_set):
     }
     with open(export_dir_for_face / (subdir_name_for_face + ".json"), "w", encoding="utf-8") as f:
         json.dump(mask_json, f, cls=GeometryJsonEncoder, sort_keys=True, indent=4)
+
+
+def export_mask_layers_combined(export_dir, mask_layout, mask_set):
+    """Exports a single .oas file containing only the mask_export_layers combined.
+
+    Applies the same invert/mirror modifiers as individual layer exports.
+
+    Args:
+        export_dir: directory for the output file
+        mask_layout: MaskLayout object for the cell and face reference
+        mask_set: MaskSet object for name and version attributes
+    """
+    top_cell = mask_layout.top_cell
+    layout = top_cell.layout()
+    layers_to_restore = {}
+    layers_to_export = {}
+
+    for layer_name in mask_layout.mask_export_layers:
+        name = layer_name
+        invert = name.startswith("-")
+        if invert:
+            name = name[1:]
+        mirror = name.startswith("^")
+        if mirror:
+            name = name[1:]
+
+        layer_info = resolve_default_layer_info(name, mask_layout.face_id)
+        layer = layout.layer(layer_info)
+
+        if invert or mirror:
+            tmp_layer = layout.layer()
+            layout.copy_layer(layer, tmp_layer)
+            layers_to_restore[layer] = tmp_layer
+
+            if invert:
+                wafer = pya.Region(top_cell.begin_shapes_rec(layer)).merged()
+                disc = pya.Region(circle_polygon(mask_layout.wafer_rad).to_itype(layout.dbu))
+                layout.clear_layer(layer)
+                top_cell.shapes(layer).insert(wafer ^ disc)
+
+            if mirror:
+                wafer = pya.Region(top_cell.begin_shapes_rec(layer)).merged()
+                layout.clear_layer(layer)
+                top_cell.shapes(layer).insert(wafer.transformed(pya.Trans(2, True, 0, 0)))
+
+        layers_to_export[layer_info.name] = layer
+
+    path = export_dir / (get_mask_layout_full_name(mask_set, mask_layout) + "-fab_layers.oas")
+    _export_cell(path, top_cell, layers_to_export)
+
+    for layer, tmp_layer in layers_to_restore.items():
+        layout.clear_layer(layer)
+        layout.copy_layer(tmp_layer, layer)
+        layout.delete_layer(tmp_layer)
 
 
 def export_mask(export_dir, layer_name, mask_layout, mask_set):

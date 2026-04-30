@@ -25,8 +25,7 @@ from kqcircuits.elements.launcher import Launcher
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
-from kqcircuits.elements.fin_met import FinMet
-from kqcircuits.elements.bias_resonator_2 import BiasResonator2
+from kqcircuits.elements.double_res_2 import DoubleRes2
 from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
@@ -51,8 +50,7 @@ import numpy as np
     face_boxes=[None, pya.DBox(pya.DPoint(0, 0), pya.DPoint(5200, 5200))],
     frames_dice_width=[50, 50],
     name_brand="RKR",
-    name_brand_size = 200, 
-    name_chip="FM1",
+    name_chip="DR2B",
     frames_marker_dist=[250, 250],
     name_mask="tt",
     name_copy="",
@@ -63,7 +61,7 @@ import numpy as np
 # @add_parameters_from(Junction, "junction_type")
 
 
-class FinMetChip(Chip):
+class DoubleRes2bChip(Chip):
     # CPW parameters for resonator and capacitor
     a = Param(pdt.TypeDouble, "CPW center conductor width", 10, unit="μm")
     b = Param(pdt.TypeDouble, "CPW gap width", 5.85, unit="μm")
@@ -74,9 +72,9 @@ class FinMetChip(Chip):
     taper_length = Param(pdt.TypeDouble, "Tapering length", 200, unit="μm")
     launcher_frame_gap = Param(pdt.TypeDouble, "Gap at chip frame", 100, unit="μm")
     launcher_indent = Param(pdt.TypeDouble, "Chip edge to pad port", 975, unit="μm")
+    launcher_y_position = Param(pdt.TypeDouble, "Launcher vertical position", 2750*2, unit="μm")
 
-    cap_x_distance = Param(pdt.TypeDouble, "Capacitor horizontal distance from inductor", 400, unit="μm")
-    cap_y_distance = Param(pdt.TypeDouble, "Capacitor vertical distance from inductor", 1000, unit="μm")
+    cap_distance = Param(pdt.TypeDouble, "Capacitor distance from bottom of resonator ground gap", 50, unit="μm")
     launcher_turn_x = Param(pdt.TypeDouble, "Distance from tip of bias launcher to turn", 300, unit="μm")
     bias_rail_y = Param(pdt.TypeDouble, "Y position of bias rail", 300, unit="μm")
     
@@ -92,11 +90,38 @@ class FinMetChip(Chip):
     #S_bridge_gap = Param(pdt.TypeDouble, "Gap between finger and hook.", 0.15, unit="μm")
     #S_taper = Param(pdt.TypeDouble, "Width of fixed finger.", 2.0, unit="μm")
 
+    def produce_four_launchers(self, a_launcher, b_launcher, launcher_width, taper_length, launcher_frame_gap, 
+                              launcher_indent, pad_pitch, launcher_assignments=None,  enabled=None, chip_box=None,
+                            face_id=0):
+        
+        launcher_cell = self.add_element(Launcher, s=launcher_width, l=taper_length,
+                                             a_launcher=a_launcher, b_launcher=b_launcher,
+                                             launcher_frame_gap=launcher_frame_gap, face_ids=[self.face_ids[face_id]])
+
+        pads_per_side = [0,2,0,2]
+
+        dirs = (90, 0, -90, 180)
+        trans = (pya.DTrans(3, 0, self.box.p1.x, self.box.p2.y),
+                 pya.DTrans(2, 0, self.box.p2.x, self.box.p2.y),
+                 pya.DTrans(1, 0, self.box.p2.x, self.box.p1.y),
+                 pya.DTrans(0, 0, self.box.p1.x, self.box.p1.y))
+        _w = self.box.p2.x - self.box.p1.x
+        _h = self.box.p2.y - self.box.p1.y
+        sides = [_w, _h, _w, _h]
+
+        return self._insert_launchers(dirs, enabled, launcher_assignments, None, launcher_cell, launcher_indent,
+                                      launcher_width, pad_pitch, pads_per_side, sides, trans, face_id=0)
+
+    
     def produce_ground_grid(self):
         # no ground grid on test junction chip
         pass
 
     def build(self):
+        self.launchers = self.produce_four_launchers(self.a_launcher, self.b_launcher, self.launcher_width,
+                                   self.taper_length, self.launcher_frame_gap, self.launcher_indent, self.launcher_y_position, launcher_assignments={1: "W1", 2: "W2", 3:"E2", 4:"E1"})
+        
+
         # when not running as a macro in KLayout have to load the kqc libraries
         #load_libraries(path=Qubit.LIBRARY_PATH)
         #qubit_cell = self.layout.create_cell("BR1", Qubit.LIBRARY_NAME)
@@ -154,7 +179,7 @@ class FinMetChip(Chip):
 
         produce_label(
             self.cell,
-            label="R K Romani + TFL",
+            label="R K Romani",
             location=pya.DPoint(test_structure_region_x - 320, test_structure_region_y - 150),
             origin=LabelOrigin.TOPLEFT,
             origin_offset=0,
@@ -164,71 +189,42 @@ class FinMetChip(Chip):
             size=50,
         )
 
-        produce_label(
-            self.cell,
-            label="UCSB",
-            location=pya.DPoint(test_structure_region_x - 350, test_structure_region_y + 420),
-            origin=LabelOrigin.TOPLEFT,
-            origin_offset=0,
-            margin=10,
-            layers=[self.face()["base_metal_gap_wo_grid"]],
-            layer_protection=self.face()["ground_grid_avoidance"],
-            size=200,
-        )
 
 
 
-        self.insert_cell(
-            Launcher, pya.DTrans(2, False, self.launcher_indent, 7500/2 + 5), f"W1",
-            a=self.a, b=self.b,
-        )
-        self.insert_cell(
-            Launcher, pya.DTrans(0, False, 7500-self.launcher_indent, 7500/2 + 5), f"E1",
-            a=self.a, b=self.b,
-        )
+
+        DR_coords = []
+
+        center_x = 7500/2
+        center_y = 7500/2
+        spacing = 1800
+        n_res = 2
+
+        res_params = [{"l_tot_length": 7700, "l_coupling_length": 700, "l_coupling_distance": 5, "l_ground_cutout_width": 1100, "feedline_length": 1100},
+                      {"l_tot_length": 8000, "l_coupling_length": 400, "l_coupling_distance": 5, "l_ground_cutout_width": 1100, "feedline_length": 1100}, ]
 
 
 
-        BR_coords = []
-
-        center_y = 7500/2 + 5
-        start_x = 1437.22 + 0.35/2 - 25.095 + 12.5
-        double_spacing = 1396.036
-        single_spacing = 1396.036 - 912.536
-        n_elements = 8        
-        
-        base_length = 3950
-        spacing = 0.025
-        element_params = [{'feedline_length': 10, 'res_length': base_length*(1-3*spacing), 'coupler_width': 27}, {'feedline_length': 10, 'res_length': base_length*(1-2*spacing), 'coupler_width': 27}, 
-                          {'feedline_length': 10, 'res_length': base_length*(1-1*spacing), 'coupler_width': 27}, {'feedline_length': 10, 'res_length': base_length*1, 'coupler_width': 27},
-                          {'feedline_length': 10, 'res_length': base_length*(1+1*spacing), 'coupler_width': 48}, {'feedline_length': 10, 'res_length': base_length*(1+2*spacing), 'coupler_width': 48}, 
-                          {'feedline_length': 10, 'res_length': base_length*(1+3*spacing), 'coupler_width': 48}, {'feedline_length': 10, 'res_length': base_length*(1+4*spacing), 'coupler_width': 48},]
         i = 0
-        while i < n_elements:
-            if i % 2 == 0:
-                distance_from_start = double_spacing * i/2
-                flip = 0
-                mirror = True
+        while i < n_res:
+            if i < n_res/2:
+                DR_coord = pya.DTrans(2, False, center_x - (i - (n_res-1)/2)*spacing, center_y)
             else:
-                distance_from_start = double_spacing * (i-1)/2 + single_spacing
-                flip = 0
-                mirror = False
-            coord = pya.DTrans(flip, mirror, start_x + distance_from_start, center_y)
-
-            if i == 0:
-                probe_bool = True,
-            else:
-                probe_bool = False,
+                DR_coord = pya.DTrans(0, False, center_x - (i - (n_res-1)/2)*spacing, center_y)
+            DR_coords.append(DR_coord)
 
             self.insert_cell(
-            FinMet, coord, f"FM{i}", 
-            feedline_cutout_bool=False,
-            enable_resistance_probe=(True if (i < 2) | (i > 5)  else False),
-            **element_params[i],
+                DoubleRes2, DR_coord, f"DR{i}", 
+                feedline_cutout_bool=False,
+                **res_params[i], 
             ) 
 
-            
-            """produce_label(
+            offset_x = -400
+            if i < n_res/2:
+                offset_y = -120
+            else:
+                offset_y = 120
+            produce_label(
                 self.cell,
                 label="l_coupling_length " + str(res_params[i]["l_coupling_length"]),
                 location=pya.DPoint(center_x - (i - (n_res-1)/2)*spacing + offset_x, center_y + offset_y),
@@ -239,43 +235,99 @@ class FinMetChip(Chip):
                 layer_protection=self.face()["ground_grid_avoidance"],
                 size=50,
             )
-            produce_label(
-                self.cell,
-                label="l_tot_length " + str(res_params[i]["l_tot_length"]),
-                location=pya.DPoint(center_x - (i - (n_res-1)/2)*spacing + offset_x, center_y + offset_y + 100),
-                origin=LabelOrigin.TOPLEFT,
-                origin_offset=0,
-                margin=10,
-                layers=[self.face()["base_metal_gap_wo_grid"]],
-                layer_protection=self.face()["ground_grid_avoidance"],
-                size=50,
-            )"""
 
             i += 1
 
-        launcher_feed_middle = ((-self.refpoints["W1_port"].x + self.refpoints["E1_port"].x)/2)
+        launcher_feed_middle = -200
+        center_y = (self.refpoints["E1_port"].y + self.refpoints["E2_port"].y)/2
         self.refpoints["launcher_feed_middle_l1"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["E1_port"].y)
-        self.refpoints["launcher_feed_middle_l2"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["FM0_feedline_b"].y)
-        self.refpoints["launcher_feed_middle_r1"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints["W1_port"].y)
-        self.refpoints["launcher_feed_middle_r2"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints[f"FM{n_elements-1}_feedline_b"].y)
-        left_ref_names = ["W1_port"]
+        self.refpoints["launcher_feed_middle_l2"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, center_y)
+        self.refpoints["launcher_feed_middle_r1"] = pya.DPoint(self.refpoints["W2_port"].x + launcher_feed_middle, self.refpoints["W2_port"].y)
+        self.refpoints["launcher_feed_middle_r2"] = pya.DPoint(self.refpoints["W2_port"].x + launcher_feed_middle, center_y)
+        left_ref_names = ["W2_port"]
         right_ref_names = []
         i = 0
-        while i < n_elements:
-            left_ref_names.append(f"FM{i}_feedline_a")
-            right_ref_names.append(f"FM{i}_feedline_b")
+        while i < n_res:
+            if i < n_res/2:
+                left_ref_names.append(f"DR{i}_feedline_b")
+                right_ref_names.append(f"DR{i}_feedline_a")
+            else:
+                left_ref_names.append(f"DR{i}_feedline_a")
+                right_ref_names.append(f"DR{i}_feedline_b")
             i += 1
         right_ref_names.append("E1_port")
 
 
         for i in range(len(left_ref_names)):
-            self.insert_cell(
-                WaveguideComposite, 
-                nodes=[
-                    Node(self.refpoints[left_ref_names[i]]),
-                    #Node(self.refpoints['launcher_feed_middle_r1']),
-                    #Node(self.refpoints['launcher_feed_middle_r2']),
-                    Node(self.refpoints[right_ref_names[i]])
-                ],
-            )
+            if i == 0:
+                self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[
+                        Node(self.refpoints[left_ref_names[i]]),
+                        Node(self.refpoints['launcher_feed_middle_r1']),
+                        Node(self.refpoints['launcher_feed_middle_r2']),
+                        Node(self.refpoints[right_ref_names[i]])
+                    ],
+                )
+            elif i == len(left_ref_names) - 1:
+                self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[
+                        Node(self.refpoints[left_ref_names[i]]),
+                        Node(self.refpoints['launcher_feed_middle_l2']),
+                        Node(self.refpoints['launcher_feed_middle_l1']),
+                        Node(self.refpoints[right_ref_names[i]])
+                    ],
+                )
+            else:
+                self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[
+                        Node(self.refpoints[left_ref_names[i]]),
+                        Node(self.refpoints[right_ref_names[i]])
+                    ],
+                )
+
+        i = 0
+        while i < n_res:
+            cap_center_x = self.refpoints[f"DR{i}_bias_port"].x
             
+            if i < n_res/2:
+                rot = 2
+                cap_center_y = self.refpoints[f"DR{i}_bias_port"].y + self.cap_distance
+            else:
+                rot = 0
+                cap_center_y = self.refpoints[f"DR{i}_bias_port"].y - self.cap_distance
+            
+            self.insert_cell(
+                FingerCapacitorGroundV3, pya.DTrans(rot, False, cap_center_x, cap_center_y), f"CAP{i}",
+                a=self.a, b=self.b,
+            )
+
+            self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[
+                        Node(self.refpoints[f"DR{i}_bias_port"]),
+                        Node(self.refpoints[f"CAP{i}_top_port"])
+                    ],
+                )
+            
+            i += 1
+
+
+        self.insert_cell( WaveguideComposite, nodes=[
+                    Node(self.refpoints[f"W1_port"]),
+                    Node((self.refpoints[f"W1_port"].x - self.launcher_turn_x, self.refpoints[f"W1_port"].y)),
+                    Node((self.refpoints[f"W1_port"].x - self.launcher_turn_x, 7500 - self.bias_rail_y)),
+                    Node((self.refpoints[f"CAP0_bottom_port"].x, 7500 - self.bias_rail_y)),
+                    Node(self.refpoints[f"CAP0_bottom_port"])],)
+        
+        self.insert_cell( WaveguideComposite, nodes=[
+                    Node(self.refpoints[f"E2_port"]),
+                    Node((self.refpoints[f"E2_port"].x + self.launcher_turn_x, self.refpoints[f"E2_port"].y)),
+                    Node((self.refpoints[f"E2_port"].x + self.launcher_turn_x, self.bias_rail_y)),
+                    Node((self.refpoints[f"CAP1_bottom_port"].x, self.bias_rail_y)),
+                    Node(self.refpoints[f"CAP1_bottom_port"])],)
+        
+
+

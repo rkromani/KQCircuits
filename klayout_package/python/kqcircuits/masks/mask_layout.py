@@ -124,6 +124,8 @@ class MaskLayout:
         )
         self.wafer_top_flat_length = kwargs.get("wafer_top_flat_length", 0)
         self.wafer_bottom_flat_length = kwargs.get("wafer_bottom_flat_length", 0)
+        self.wafer_outline_in_dicing = kwargs.get("wafer_outline_in_dicing", False)
+        self.wafer_outline_width = kwargs.get("wafer_outline_width", 200)
         self.dice_width = kwargs.get("dice_width", default_mask_parameters[self.face_id]["dice_width"])
         self.text_margin = kwargs.get("text_margin", default_mask_parameters[self.face_id]["text_margin"])
         self.chip_size = kwargs.get("chip_size", default_mask_parameters[self.face_id]["chip_size"])
@@ -384,20 +386,29 @@ class MaskLayout:
             mask_name_for_chip: mask name to place on each chip, or None (default) to not add mask names to the chip.
         """
         labels_cells = {self: labels_cell}
+        _rot_to_origin = {
+            0: LabelOrigin.BOTTOMRIGHT,
+            1: LabelOrigin.TOPRIGHT,
+            2: LabelOrigin.TOPLEFT,
+            3: LabelOrigin.BOTTOMLEFT,
+        }
         for chip_name, _, _, bbox, dtrans, position_label in self.added_chips:
             labels_cell_2 = labels_cells[self]
             total_mirror_label = bool(dtrans.is_mirror()) ^ bool(self.mirror_labels)
             bbox_x1, bbox_x2 = (bbox.left, bbox.right) if total_mirror_label else (bbox.right, bbox.left)
+            label_rotation = dtrans.rot
+            label_origin = _rot_to_origin[label_rotation]
             produce_label(
                 labels_cell_2,
                 position_label,
                 dtrans * (pya.DPoint(bbox_x1, bbox.bottom)),
-                LabelOrigin.BOTTOMRIGHT,
+                label_origin,
                 self.dice_width,
                 self.text_margin,
                 [self.face()[layer] for layer in layers],
                 self.face()["ground_grid_avoidance"],
                 mirror=self.mirror_labels,
+                rotation=label_rotation,
             )
             if mask_name_for_chip is not None:
                 produce_label(
@@ -411,12 +422,12 @@ class MaskLayout:
                     self.face()["ground_grid_avoidance"],
                     mirror=self.mirror_labels,
                 )
-            bbox_xr = bbox.right if dtrans.is_mirror() else bbox.left
-            self.graphical_representation_inputs.append(
-                (chip_name, dtrans * (pya.DPoint(bbox_xr, bbox.bottom)), position_label, bbox.width(), labels_cell_2)
-            )
             i, j = self.position_label_to_two_coordinates(position_label)
             chip_box = pya.DBox(dtrans * bbox)
+            bbox_xr = chip_box.right if dtrans.is_mirror() else chip_box.left
+            self.graphical_representation_inputs.append(
+                (chip_name, pya.DPoint(bbox_xr, chip_box.bottom), position_label, chip_box.width(), labels_cell_2)
+            )
             self.chip_copies[position_label] = {
                 "name_chip": chip_name,
                 "i": i,
@@ -510,10 +521,13 @@ class MaskLayout:
         if align_to:
             orig = pya.DVector(*align_to)
         elif self.center_on_wafer:
-            # Center the grid on the wafer (0, 0)
+            # Center the grid on the wafer (0, 0), accounting for chip_trans rotation
             num_cols = len(chips_map[0]) if chips_map else 0
             num_rows = len(chips_map)
-            orig = pya.DVector(-num_cols * chip_width / 2, num_rows * chip_height / 2)
+            rotated_corners = [chip_trans * pya.DPoint(x, y)
+                               for x, y in [(0, 0), (chip_width, 0), (0, chip_height), (chip_width, chip_height)]]
+            bl_offset = pya.DVector(min(p.x for p in rotated_corners), min(p.y for p in rotated_corners))
+            orig = pya.DVector(-num_cols * chip_width / 2, num_rows * chip_height / 2) - bl_offset
         elif align:  # autoalign to the specified side of the existing layout
             w = len(chips_map[0]) * chip_width / 2
             h = len(chips_map) * chip_height
@@ -642,6 +656,19 @@ class MaskLayout:
                     maskextra_cell.shapes(self.layout.layer(self.face()[layer_name])).insert(region ^ region_covered)
                 else:
                     maskextra_cell.shapes(self.layout.layer(self.face()[layer_name])).insert(region_covered)
+
+        if self.wafer_outline_in_dicing:
+            points = []
+            for a in range(0, 257):
+                x = math.cos(a / 128 * math.pi) * self.wafer_rad
+                y = max(math.sin(a / 128 * math.pi) * self.wafer_rad, -14.5e4)
+                if (y > 0 and (x > self.wafer_top_flat_length / 2 or x < -self.wafer_top_flat_length / 2)) or (
+                    y < 0 and (x > self.wafer_bottom_flat_length / 2 or x < -self.wafer_bottom_flat_length / 2)
+                ):
+                    points.append(pya.DPoint(self.wafer_center.x + x, self.wafer_center.y + y))
+            if len(points) > 1:
+                outline = pya.DPath(points, self.wafer_outline_width, 0, 0, True)
+                maskextra_cell.shapes(self.layout.layer(self.face()["chip_dicing"])).insert(outline)
 
         self.top_cell.insert(pya.DCellInstArray(maskextra_cell.cell_index(), pya.DTrans()))
 

@@ -24,6 +24,7 @@ from kqcircuits.pya_resolver import pya
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.coupled_inductor import CoupledInductor
+from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
 from kqcircuits.junctions.rkr_hook_junction import RKRHook
 from kqcircuits.util.refpoints import RefpointToInternalPort
 
@@ -37,7 +38,10 @@ class DoubleRes2(Element):
     l_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout for inductor", 1000, unit="μm")
 
     feedline_spacing = Param(pdt.TypeDouble, "Feedline spacing", 10, unit="μm")
+    feedline_length = Param(pdt.TypeDouble, "Feedline length", 1000, unit="μm")
     feedline_coupling_ground_spacing = Param(pdt.TypeDouble, "Feedline coupling ground spacing", 5, unit="μm")
+    feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
+    feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", False)
     
     l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 9000, unit="μm")
     l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 80, unit="μm")
@@ -53,6 +57,7 @@ class DoubleRes2(Element):
     bias_line_length = Param(pdt.TypeDouble, "Length of bias line extending from capacitor", 50, unit="μm")
 
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", True)
+    enable_feedline_termination = Param(pdt.TypeBoolean, "Whether to terminate the feedline with RLC sim elements", False)
 
     n = Param(pdt.TypeInt, "Number of points for rounding", 64)
 
@@ -63,12 +68,16 @@ class DoubleRes2(Element):
                          ground_cutout_width=self.l_ground_cutout_width,
                          feedline_spacing=self.feedline_spacing,
                          feedline_coupling_ground_spacing=self.feedline_coupling_ground_spacing,
+                         feedline_cutout=self.feedline_cutout,
+                         feedline_cutout_bool=self.feedline_cutout_bool,
+                         feedline_length=self.feedline_length, 
                          l_tot_length=self.l_tot_length,
                          l_coupling_length=self.l_coupling_length,
                          l_coupling_distance=self.l_coupling_distance,
                          l_width=self.l_width,
                          l_connection_spacing=self.l_connection_spacing,
                          enable_mesh_layers=self.enable_mesh_layers,
+                         enable_feedline_termination=self.enable_feedline_termination,
                          n=self.n)
         
         self.ground_gap_top = -(self.a/2 + self.b + self.feedline_coupling_ground_spacing)
@@ -159,10 +168,10 @@ class DoubleRes2(Element):
 
         self.refpoints["bias_port"] = pya.DPoint(0, bias_line_end_y)
 
-        #self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
-        #self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
-        #self.refpoints["feedline_a"] = pya.DPoint(-self.feedline_length/2, 0)
-        #self.refpoints["feedline_b"] = pya.DPoint(self.feedline_length/2, 0)
+        self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
+        self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
+        self.refpoints["feedline_a"] = pya.DPoint(-self.feedline_length/2, 0)
+        self.refpoints["feedline_b"] = pya.DPoint(self.feedline_length/2, 0)
         #self.refpoints["inductor_ground"] = pya.DPoint(0, self.ground_gap_top - self.l_coupling_distance - 8 * self.l_radius)
 
 

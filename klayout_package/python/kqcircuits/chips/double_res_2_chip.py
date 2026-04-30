@@ -50,7 +50,7 @@ import numpy as np
     face_boxes=[None, pya.DBox(pya.DPoint(0, 0), pya.DPoint(5200, 5200))],
     frames_dice_width=[50, 50],
     name_brand="RKR",
-    name_chip="DR1",
+    name_chip="DR2A",
     frames_marker_dist=[250, 250],
     name_mask="tt",
     name_copy="",
@@ -208,13 +208,13 @@ class DoubleRes2Chip(Chip):
                     ],
                 )
         
-        center_offset_x = 1500
+        center_offset_x = 1300
         center_x = (self.refpoints["E1_port"].x + self.refpoints["W1_port"].x)/2
         res_locs = [pya.DPoint(center_x - center_offset_x*1.5, self.refpoints["E1_port"].y),
                     pya.DPoint(center_x - center_offset_x*0.5, self.refpoints["E1_port"].y),
                     pya.DPoint(center_x + center_offset_x*0.5, self.refpoints["E1_port"].y),
                     pya.DPoint(center_x + center_offset_x*1, self.refpoints["feedline_middle_right"].y),
-                    pya.DPoint(center_x - center_offset_x*0, self.refpoints["feedline_middle_right"].y),
+                    #pya.DPoint(center_x - center_offset_x*0, self.refpoints["feedline_middle_right"].y),
                     pya.DPoint(center_x - center_offset_x*1, self.refpoints["feedline_middle_right"].y),
                     pya.DPoint(center_x + center_offset_x*0.5, self.refpoints["feedline_middle_right"].y),
                     pya.DPoint(center_x - center_offset_x*0.5, self.refpoints["feedline_middle_right"].y),
@@ -222,11 +222,23 @@ class DoubleRes2Chip(Chip):
                     pya.DPoint(center_x - center_offset_x*0, self.refpoints["E2_port"].y),
                     pya.DPoint(center_x - center_offset_x*1, self.refpoints["E2_port"].y),
                     ]
-        flip_bools = [False, False, False,  True, True, True, False, False, True, True, True]
+        #flip_bools = [False, False, False,  True, True, True, False, False, True, True, True]
+        flip_bools = [False, False, False,  True, True, False, False, True, True, True]
         bias_ports = ['E2', 'E2', 'E2', 'E2', 'E2', 'E2', 'W1', 'W1', 'W1', 'W1', 'W1',]
+
+        element_params = []
+        i = 0
+        while i < len(res_locs): 
+            if i < 5:
+                element_params.append({"l_tot_length": 7700*(1 + 0.05 * (i-2)), "l_coupling_length": 700*(1 + 0.05 * (i-2)), "l_coupling_distance": 5, "l_ground_cutout_width": 1100, "feedline_length": 1100})
+            else:
+                element_params.append({"l_tot_length": 7700*(1 + 0.05 * (i-2)), "l_coupling_length": 400*(1 + 0.05 * (i-2)), "l_coupling_distance": 5, "l_ground_cutout_width": 1100, "feedline_length": 1100})
+            i += 1
+
         i = 0
         while i < len(res_locs):
-            self.insert_cell(DoubleRes2, pya.DTrans(0, flip_bools[i], res_locs[i].x, res_locs[i].y), f"DR_{i}")
+            self.insert_cell(DoubleRes2, pya.DTrans(0, flip_bools[i], res_locs[i].x, res_locs[i].y), f"DR_{i}",
+                             **element_params[i])
             
             if flip_bools[i]:
                 rot = 0
@@ -264,7 +276,7 @@ class DoubleRes2Chip(Chip):
 
         
         bias_line_offset_x = 200
-        top_dr_order = [3, 2, 4, 1, 5, 0]
+        top_dr_order = [3, 2, 1, 4, 0]
 
         i = 0
         while i < len(top_dr_order) - 1:
@@ -291,11 +303,22 @@ class DoubleRes2Chip(Chip):
                 )
             i += 1
 
-        bias_top_middle_x = (self.refpoints[f"T{top_dr_order[-1]}_port_left"].x + self.refpoints[f"E2_port"].x)/2
+
+        bias_top_middle_x = (100 + self.refpoints[f"E2_port"].x)
+        element_params = {"finger_length": 100, "finger_number": 70}
+        self.insert_cell(FingerCapacitorGroundV3, pya.DTrans(0, False, bias_top_middle_x, self.refpoints[f"T{top_dr_order[-1]}_port_right"].y - 100), f"FC_L",
+                             **element_params)
         self.insert_cell(
                     WaveguideComposite, 
                     nodes=[Node(self.refpoints[f"T{top_dr_order[-1]}_port_right"]),
                            Node(pya.DPoint(bias_top_middle_x, self.refpoints[f"T{top_dr_order[-1]}_port_right"].y)),
+                           Node(self.refpoints[f"FC_L_top_port"]),
+                            ],
+                    r=20
+                )
+        self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[Node(self.refpoints[f"FC_L_bottom_port"]),
                            Node(pya.DPoint(bias_top_middle_x, self.refpoints[f"E2_port"].y)),
                            Node(self.refpoints[f"E2_port"]),
                             ],
@@ -303,7 +326,7 @@ class DoubleRes2Chip(Chip):
                 )
 
 
-        bottom_dr_order = [10, 7, 9, 6, 8]
+        bottom_dr_order = [9, 6, 8, 5, 7]
 
         i = 0
         while i < len(bottom_dr_order) - 1:
@@ -330,11 +353,20 @@ class DoubleRes2Chip(Chip):
                 )
             i += 1
 
-        bias_top_middle_x = (self.refpoints[f"T{bottom_dr_order[-1]}_port_left"].x + self.refpoints[f"W1_port"].x)/2
+        bias_top_middle_x = (-100 + self.refpoints[f"W1_port"].x)
+        self.insert_cell(FingerCapacitorGroundV3, pya.DTrans(2, False, bias_top_middle_x, self.refpoints[f"T{bottom_dr_order[-1]}_port_right"].y + 100), f"FC_R",
+                             **element_params)
         self.insert_cell(
                     WaveguideComposite, 
                     nodes=[Node(self.refpoints[f"T{bottom_dr_order[-1]}_port_right"]),
                            Node(pya.DPoint(bias_top_middle_x, self.refpoints[f"T{bottom_dr_order[-1]}_port_right"].y)),
+                           Node(self.refpoints[f"FC_R_top_port"]),
+                            ],
+                    r=20
+                )
+        self.insert_cell(
+                    WaveguideComposite, 
+                    nodes=[Node(self.refpoints[f"FC_R_bottom_port"]),
                            Node(pya.DPoint(bias_top_middle_x, self.refpoints[f"W1_port"].y)),
                            Node(self.refpoints[f"W1_port"]),
                             ],
