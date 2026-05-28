@@ -283,6 +283,12 @@ class Simulation:
     over_etching = Param(pdt.TypeDouble, "Expansion of metal gaps (negative to shrink the gaps).", 0, unit="μm")
     vertical_over_etching = Param(pdt.TypeDouble, "Vertical over-etching into substrates at gaps.", 0, unit="μm")
     hollow_tsv = Param(pdt.TypeDouble, "Thickness of the TSV metal boundary or 0 for solid metal.", 0, unit="μm")
+    trench_depth = Param(
+        pdt.TypeDouble,
+        "Depth of substrate trench for conformal metal simulation. Requires trench_etch layer on the element.",
+        0,
+        unit="um",
+    )
 
     partition_regions = Param(
         pdt.TypeString,
@@ -930,6 +936,42 @@ class Simulation:
                 # Insert metal and dielectric layers
                 dielectric_thickness = z[face_id][2] - z[face_id][1]
                 metal_material = self.ith_value(self.ith_value(self.metal_material, i), j)
+
+                # Trench conformal metal processing: split metal into top, floor, and wall components
+                if self.trench_depth > 0.0 and self.fixed_level_stackup:
+                    trench_region = self.simplified_region(self.region_from_layer(face_id, "trench_etch"))
+                    if not trench_region.is_empty():
+                        metal_on_top = metal_region - trench_region
+                        metal_in_trench = metal_region & trench_region
+                        floor_z = z[face_id][0] - self.trench_depth
+
+                        # Wall edges: parts of metal_on_top edges that coincide with the trench
+                        # boundary. EdgeCollection & EdgeCollection returns only the collinear
+                        # overlapping portions, so corner-point touches produce zero-length results
+                        # which are filtered out by the p1 != p2 check below.
+                        top_edges = metal_on_top.edges()
+                        wall_edges = top_edges & trench_region.edges()
+                        dbu = self.layout.dbu
+                        wall_segs = [
+                            [e.p1.x * dbu, e.p1.y * dbu, e.p2.x * dbu, e.p2.y * dbu, floor_z, z[face_id][0]]
+                            for e in wall_edges.each()
+                            if e.p1 != e.p2  # skip zero-length (point-touch) results
+                        ]
+                        if not hasattr(self, "_trench_wall_segs"):
+                            self._trench_wall_segs = []
+                        self._trench_wall_segs.extend(wall_segs)
+
+                        # Trench tool: extruded region used to subtract from substrate in ANSYS
+                        self.insert_layer(face_id + "_trench_tool", trench_region, floor_z, z[face_id][0])
+
+                        # Store floor metal info for post-excitation-split insertion
+                        if not hasattr(self, "_trench_floor_pending"):
+                            self._trench_floor_pending = []
+                        self._trench_floor_pending.append((face_id, metal_in_trench, floor_z, metal_material))
+
+                        # Only top-surface metal goes into the main metal layer
+                        metal_region = metal_on_top
+
                 if self.fixed_level_stackup:
                     # Use fixed level stack-up
                     self.insert_layer(
@@ -1181,7 +1223,35 @@ class Simulation:
         )
 
         self.split_metal_layers_by_excitation()
+
+        # Insert floor metal layers with excitation matched to the already-split top metal layers
+        for face_id, metal_in_trench, floor_z, metal_material in getattr(self, "_trench_floor_pending", []):
+            top_metal_layers = {
+                n: d for n, d in self.layers.items()
+                if n.startswith(face_id + "_") and "excitation" in d and self.is_metal(d.get("material", ""))
+            }
+            # Process signals before ground so signal floor parts aren't claimed by ground
+            sorted_layers = sorted(top_metal_layers.items(), key=lambda x: (x[1]["excitation"] == 0, x[0]))
+            remaining_floor = metal_in_trench
+            for top_name, top_data in sorted_layers:
+                # Floor parts adjacent to this top region share a boundary edge with it
+                floor_part = remaining_floor.interacting(top_data["region"].edges())
+                if not floor_part.is_empty():
+                    floor_name = top_name.replace(f"{face_id}_", f"{face_id}_trench_floor_", 1)
+                    self.insert_layer(floor_name, floor_part, floor_z, floor_z, material=metal_material)
+                    self.layers[floor_name]["excitation"] = top_data["excitation"]
+                    remaining_floor = remaining_floor - floor_part
+
         self.produce_layers(parts)
+
+        # After produce_layers, wire trench tools into substrate subtract list for ANSYS
+        if self.trench_depth > 0.0:
+            trench_tools = [k for k in self.layers if k.endswith("_trench_tool")]
+            if trench_tools:
+                substrate_keys = [k for k in self.layers if k.startswith("substrate_")]
+                for sub_key in substrate_keys:
+                    existing = self.layers[sub_key].get("subtract", [])
+                    self.layers[sub_key]["subtract"] = existing + [t for t in trench_tools if t not in existing]
 
         for part in parts:
             # Warn of empty partition regions
@@ -1749,8 +1819,9 @@ class Simulation:
         * material_dict: Dictionary of dielectric materials,
         * box: Boundary box,
         * ports: Port data in dictionary form, see self.get_port_data(),
+        * trench_wall_segments (optional): list of [x1,y1,x2,y2,z_bottom,z_top] for 3D wall sheets
         """
-        return {
+        data = {
             "simulation_name": self.name,
             "units": "um",  # hardcoded assumption in multiple places
             "layers": self.layers,
@@ -1758,6 +1829,9 @@ class Simulation:
             "box": self.box,
             "ports": self.get_port_data(),
         }
+        if getattr(self, "_trench_wall_segs", None):
+            data["trench_wall_segments"] = self._trench_wall_segs
+        return data
 
     def get_layers(self):
         """Returns simulation layer numbers in list. Only return layers that are in use."""

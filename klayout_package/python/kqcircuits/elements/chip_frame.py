@@ -51,6 +51,7 @@ class ChipFrame(Element):
     name_chip = Param(pdt.TypeString, "Name of the chip", "CTest")
     name_copy = Param(pdt.TypeString, "Name of the copy", None)
     name_brand = Param(pdt.TypeString, "Name of the brand", default_brand)
+    name_date = Param(pdt.TypeString, "Date/version label below mask name (upper-left corner)", "")
     text_margin = Param(
         pdt.TypeDouble, "Margin for labels", 100, docstring="Margin of the ground grid avoidance layer around the text"
     )
@@ -92,11 +93,19 @@ class ChipFrame(Element):
         x_min, x_max, y_min, y_max = self._box_points()
         chip_name = self.name_chip
         labels = [self.name_mask, chip_name, self.name_copy, self.name_brand]
-        self._produce_label(labels[0], pya.DPoint(x_min, y_max), LabelOrigin.TOPLEFT)
+        mask_label_bbox = self._produce_label(labels[0], pya.DPoint(x_min, y_max), LabelOrigin.TOPLEFT)
         if self.name_chip:
             self._produce_label(labels[1], pya.DPoint(x_max, y_max), LabelOrigin.TOPRIGHT)
         if self.face_label_show:
             self._produce_face_label()
+        if self.name_date and mask_label_bbox:
+            label_size = 350 * min(1, self.box.width() / 7000, self.box.height() / 7000)
+            self._produce_label(
+                self.name_date,
+                pya.DPoint(x_min, mask_label_bbox.p1.y + self.text_margin),
+                LabelOrigin.TOPLEFT,
+                size=label_size * 0.6,
+            )
         self._produce_label(labels[2], pya.DPoint(x_max, y_min), LabelOrigin.BOTTOMRIGHT)
         brand_size = self.name_brand_size if self.name_brand_size > 0 else None
         self._produce_label(labels[3], pya.DPoint(x_min, y_min), LabelOrigin.BOTTOMLEFT, size=brand_size)

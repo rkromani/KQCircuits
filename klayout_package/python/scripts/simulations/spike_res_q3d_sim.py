@@ -21,6 +21,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+import numpy as np
 
 from kqcircuits.pya_resolver import pya
 from kqcircuits.simulations.export.ansys.ansys_export import export_ansys
@@ -90,6 +91,11 @@ class ResonatorSpikeQ3dSim(BaseSimClass):
         center_x = 0  # Centered horizontally
 
         # Calculate y position: end_box_bottom + half height
+        self.spike_region_width = self.spike_height * 2 + self.spike_gap #+ self.angle_evap_offset
+        self.end_box_half_width = 1.5 * self.end_box_width + self.spike_region_width
+        self.end_box_tot_height = self.end_box_height + self.end_box_spacing
+        self.l_height = 0.5 * (self.l_length - 2*self.l_coupling_length - 2*self.l_radius*(np.pi - 1) + self.end_box_half_width + self.end_box_tot_height - self.l_grounding_distance)
+
         ground_gap_bottom = -(self.l_height + self.l_coupling_distance + self.feedline_spacing +
                               self.b + self.a/2)
         end_box_height = self.end_box_height
@@ -163,8 +169,8 @@ sweep_params = {
     #"spike_gap": [0.025, 0.05, 0.1, 0.15, 0.2,],
     #"spike_height": [2.0, 4.0, 10.0, 15.0, 20.0],
     #"spike_base_width": [0.125, 0.25, 0.5, 1.0, 2.0],
-    "end_box_height": [600, 800, 1000],
-    "spike_height": [1, 1.5, 2],
+    #"end_box_height": [600, 800, 1000],
+    #"spike_height": [1, 1.5, 2],
 }
 
 # Apply sweep overrides if provided

@@ -311,6 +311,21 @@ def scale(oEditor, objects, factor):
         )
 
 
+def create_trench_wall_polygon(oEditor, name, x1, y1, x2, y2, z_bottom, z_top, units):
+    """Creates a vertical quadrilateral sheet representing a trench wall segment.
+
+    The sheet spans from (x1,y1) to (x2,y2) in XY and from z_bottom to z_top in Z.
+    Used to model the conformal metal on the vertical walls of a substrate trench.
+    """
+    points = [
+        [x1, y1, z_top],
+        [x2, y2, z_top],
+        [x2, y2, z_bottom],
+        [x1, y1, z_bottom],
+    ]
+    create_polygon(oEditor, name, points, units)
+
+
 def match_layer(layer_name, layer_pattern):
     """Return True if layer name matches pattern, else return False."""
     pattern = "^" + str(re.escape(layer_pattern).replace(r"\*", ".*")) + "$"

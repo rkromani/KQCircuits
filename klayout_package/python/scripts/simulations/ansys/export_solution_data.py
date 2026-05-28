@@ -112,10 +112,16 @@ flux_filename = os.path.join(path, basename + "_flux.csv")
 
 # Export solution data separately for HFSS and Q3D
 design_type = oDesign.GetDesignType()
+design_name = oDesign.GetName()
+solution_type = oDesign.GetSolutionType() if design_type == "HFSS" else "N/A"
+oDesktop.AddMessage("", "", 0, "Export: Design='{}' Type='{}' SolutionType='{}'".format(
+    design_name, design_type, solution_type))
+
 if design_type == "HFSS":
     setup = get_enabled_setup(oDesign)
     solution = setup + " : LastAdaptive"
     context = []
+    oDesktop.AddMessage("", "", 0, "HFSS Export: Setup='{}' SolutionType='{}'".format(setup, solution_type))
     if oDesign.GetSolutionType() == "HFSS Terminal Network":
         sweep = get_enabled_sweep(oDesign, setup)
         ports = oBoundarySetup.GetExcitations()[::2]
@@ -175,7 +181,12 @@ if design_type == "HFSS":
         # S-parameter export
         s_solution = solution if sweep is None else setup + " : " + sweep
         s_context = context if sweep is None else ["Domain:=", "Sweep"]
-        if get_quantities(oReportSetup, "Terminal Solution Data", s_solution, s_context, "Terminal S Parameter"):
+        oDesktop.AddMessage("", "", 0, "Terminal Network: {} ports, sweep='{}', s_solution='{}'".format(
+            len(ports), sweep, s_solution))
+        s_params_available = get_quantities(oReportSetup, "Terminal Solution Data", s_solution, s_context, "Terminal S Parameter")
+        oDesktop.AddMessage("", "", 0, "S-parameters available: {} (count={})".format(
+            bool(s_params_available), len(s_params_available) if s_params_available else 0))
+        if s_params_available:
             file_name = os.path.join(path, basename + "_SMatrix.s{}p".format(len(ports)))
             oSolutions.ExportNetworkData(
                 "",  # Design variation key. Pass empty string for the current nominal variation.
@@ -194,6 +205,17 @@ if design_type == "HFSS":
                 True,  # Specifies whether to support non-standard Touchstone extensions for mixed reference impedance
             )
 
+            # Add metadata to json_content so it's not empty
+            if not json_content:
+                json_content = {}
+            json_content["s_parameter_file"] = os.path.basename(file_name)
+            json_content["solution_type"] = "Terminal Network"
+            json_content["num_ports"] = len(ports)
+            oDesktop.AddMessage("", "", 0, "S-parameters exported to {}".format(file_name))
+        else:
+            oDesktop.AddMessage("", "", 1, "WARNING: No S-parameters found for Terminal Network design")
+            oDesktop.AddMessage("", "", 1, "Check that sweep completed successfully and has valid port data")
+
     elif oDesign.GetSolutionType() == "Eigenmode":
         oSolutions.ExportEigenmodes(solution, oSolutions.ListVariations(solution)[0], eig_filename)
 
@@ -202,6 +224,61 @@ if design_type == "HFSS":
         json_content["eigenmode_file"] = os.path.basename(eig_filename)
         json_content["solution_type"] = "Eigenmode"
         oDesktop.AddMessage("", "", 0, "Eigenmode data exported to {}".format(eig_filename))
+
+    else:
+        # Standard HFSS Driven Modal (wave equation)
+        oDesktop.AddMessage("", "", 0, "Detected HFSS Driven Modal design")
+
+        # Export S-parameters if available
+        try:
+            sweep = get_enabled_sweep(oDesign, setup)
+            oDesktop.AddMessage("", "", 0, "Found sweep: {}".format(sweep if sweep else "None"))
+
+            if sweep is not None:
+                ports = oBoundarySetup.GetExcitations()[::2]
+                oDesktop.AddMessage("", "", 0, "Found {} ports: {}".format(len(ports), ", ".join(ports)))
+
+                s_solution = setup + " : " + sweep
+                s_context = ["Domain:=", "Sweep"]
+
+                oDesktop.AddMessage("", "", 0, "Attempting to export S-parameters...")
+                oDesktop.AddMessage("", "", 0, "Solution: {}".format(s_solution))
+
+                # Try to export S-parameters directly without checking quantities first
+                # (the check might be failing even when S-parameters exist)
+                file_name = os.path.join(path, basename + "_SMatrix.s{}p".format(len(ports)))
+                oDesktop.AddMessage("", "", 0, "Export path: {}".format(file_name))
+
+                oSolutions.ExportNetworkData(
+                    "",  # Design variation key
+                    s_solution,  # Selected solutions
+                    3,  # File format: 3 = Touchstone (.sNp)
+                    file_name,  # Full path to the file
+                    ["All"],  # Export all frequencies
+                    False,  # Don't renormalize
+                    50,  # Impedance for renormalization
+                    "S",  # Export S-matrix
+                    -1,  # All passes
+                    0,  # Format: magnitude/phase
+                    15,  # Precision
+                    True,  # Use export frequencies
+                    False,  # Don't include Gamma and Impedance
+                    True,  # Support non-standard Touchstone extensions
+                )
+
+                # Add metadata to json_content
+                if not json_content:
+                    json_content = {}
+                json_content["s_parameter_file"] = os.path.basename(file_name)
+                json_content["solution_type"] = "Driven Modal"
+                json_content["num_ports"] = len(ports)
+                oDesktop.AddMessage("", "", 0, "SUCCESS: S-parameters exported to {}".format(file_name))
+            else:
+                oDesktop.AddMessage("", "", 1, "Warning: No sweep found - cannot export S-parameters")
+        except Exception as e:
+            oDesktop.AddMessage("", "", 2, "ERROR exporting S-parameters for driven modal: {}".format(str(e)))
+            import traceback
+            oDesktop.AddMessage("", "", 2, "Traceback: {}".format(traceback.format_exc()))
 
     # Add integrals to result json file
     json_content.update(

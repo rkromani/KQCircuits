@@ -124,7 +124,7 @@ sweep_params = {
     #"feedline_length": [500, 750, 1000, 1250, 1500],
     #"feedline_spacing": [1, 2, 5, 10, 20],
     #"l_coupling_distance": [2, 5]
-    "l_coupling_distance": np.arange(2, 6, 1).tolist(),
+    #"l_coupling_distance": np.arange(2, 6, 1).tolist(),
 }
 
 # Apply sweep overrides if provided

@@ -66,38 +66,38 @@ class AlignmentMarkers(Element):
 
         pts_around_cross_tl = [
             pya.DPoint(-W/2, W/2),
-            pya.DPoint(-W/2, L),
-            pya.DPoint(-3*W/2, L),
+            pya.DPoint(-W/2, L - W),
+            pya.DPoint(-3*W/2, L - W),
             pya.DPoint(-3*W/2, 3*W/2),
-            pya.DPoint(-L, 3*W/2),
-            pya.DPoint(-L, W/2),
+            pya.DPoint(-L+W, 3*W/2),
+            pya.DPoint(-L+W, W/2),
         ]
         region_around_cross_tl = pya.Region(pya.DPolygon(pts_around_cross_tl).to_itype(self.layout.dbu))
         pts_around_cross_tr = [
             pya.DPoint(W/2, W/2),
-            pya.DPoint(W/2, L),
-            pya.DPoint(3*W/2, L),
+            pya.DPoint(W/2, L - W),
+            pya.DPoint(3*W/2, L - W),
             pya.DPoint(3*W/2, 3*W/2),
-            pya.DPoint(L, 3*W/2),
-            pya.DPoint(L, W/2),
+            pya.DPoint(L-W, 3*W/2),
+            pya.DPoint(L-W, W/2),
         ]
         region_around_cross_tr = pya.Region(pya.DPolygon(pts_around_cross_tr).to_itype(self.layout.dbu))
         pts_around_cross_bl = [
             pya.DPoint(-W/2, -W/2),
-            pya.DPoint(-W/2, -L),
-            pya.DPoint(-3*W/2, -L),
+            pya.DPoint(-W/2, -L + W),
+            pya.DPoint(-3*W/2, -L + W),
             pya.DPoint(-3*W/2, -3*W/2),
-            pya.DPoint(-L, -3*W/2),
-            pya.DPoint(-L, -W/2),
+            pya.DPoint(-L+W, -3*W/2),
+            pya.DPoint(-L+W, -W/2),
         ]
         region_around_cross_bl = pya.Region(pya.DPolygon(pts_around_cross_bl).to_itype(self.layout.dbu))
         pts_around_cross_br = [
             pya.DPoint(W/2, -W/2),
-            pya.DPoint(W/2, -L),
-            pya.DPoint(3*W/2, -L),
+            pya.DPoint(W/2, -L + W),
+            pya.DPoint(3*W/2, -L + W),
             pya.DPoint(3*W/2, -3*W/2),
-            pya.DPoint(L, -3*W/2),
-            pya.DPoint(L, -W/2),
+            pya.DPoint(L-W, -3*W/2),
+            pya.DPoint(L-W, -W/2),
         ]
         region_around_cross_br = pya.Region(pya.DPolygon(pts_around_cross_br).to_itype(self.layout.dbu))
         region_around_cross = region_around_cross_tl + region_around_cross_tr + region_around_cross_bl + region_around_cross_br

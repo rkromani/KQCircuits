@@ -84,6 +84,7 @@ class MaskSet:
         mask_export_layers=None,
         export_path=None,
         add_mask_name_to_chips=False,
+        name_date="",
     ):
 
         self._time = {"INIT": perf_counter(), "ADD_CHIPS": 0, "BUILD": 0, "EXPORT": 0, "END": 0}
@@ -116,6 +117,7 @@ class MaskSet:
 
         self._extra_params["mock_chips"] = "-m" in argv
         self._extra_params["skip_extras"] = "-s" in argv
+        self._extra_params["name_date"] = name_date
 
         self._cpu_override = 0
         if "-c" in argv and len(argv) > argv.index("-c") + 1:
@@ -255,6 +257,7 @@ class MaskSet:
                 "merge_base_metal_gap": True,
                 "display_name": variant_name,
                 "name_copy": None,
+                "name_date": _extra_params.get("name_date", ""),
             }
             if mock_chip:
                 mock_params = chip_class().pcell_params_by_name(Chip, **params)

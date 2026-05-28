@@ -18,7 +18,7 @@
 # and organizations (meetiqm.com/iqm-organization-contributor-license-agreement).
 
 
-"""Eigenmode + Wave S21 Simulation Workflow with Mesh Import
+"""Eigenmode + Wave S21 Simulation Workflow with Mesh Import for BiasResonator
 
 This script creates a chained simulation workflow that:
 1. Runs HFSS eigenmode simulation to extract resonance frequency
@@ -59,71 +59,66 @@ sys.path.insert(0, str(Path(__file__).parents[4]))
 from simulations_database.tools.simulation_db import SimulationDB
 
 # Import base classes for building custom simulation classes
-from kqcircuits.elements.resonator_spike import ResonatorSpike
+from kqcircuits.elements.bias_resonator import BiasResonator
 from kqcircuits.simulations.port import InternalPort
 from kqcircuits.simulations.single_element_simulation import get_single_element_sim_class
 from kqcircuits.util.refpoints import WaveguideToSimPort
 
 
-# Define simulation classes (copied from spike_res_hfss_sim.py and spike_res_hfss_wave_sim.py)
+# Define simulation classes (adapted from bias_res_hfss_sim.py)
 
 # Eigenmode simulation class
-BaseSimClass_Eigenmode = get_single_element_sim_class(ResonatorSpike)
+BaseSimClass_Eigenmode = get_single_element_sim_class(BiasResonator)
 
-class SpikeResHfssSim(BaseSimClass_Eigenmode):
-    """Custom simulation class for HFSS eigenmode analysis of spike resonator."""
+class BiasResEigenmodeSim(BaseSimClass_Eigenmode):
+    """Custom simulation class for HFSS eigenmode analysis of bias resonator."""
 
     def build(self):
         # Call parent build to create geometry
         super().build()
 
-        # Check if we're using lumped models
-        using_lumped = getattr(self, 'junction_use_lumped', False)
+        # Set up net assignment ports for eigenmode
+        self.ports = []
 
-        if not using_lumped:
-            # FULL GEOMETRY MODE: Set up net assignment ports
-            self.ports = []
+        # Port on feedline coupling region
+        try:
+            signal_loc_feedline = self.refpoints['feedline_a']
+        except KeyError:
+            signal_loc_feedline = pya.DPoint(0, 0)
 
-            # For eigenmode, we assign ports to define electrical nets
-            # Port on capacitor/feedline coupling region
+        # Port on inductor - use ACRL source point if available
+        try:
+            signal_loc_inductor = self.refpoints['acrl_source_main_inductor']
+        except KeyError:
             try:
-                signal_loc_cap = self.refpoints['feedline_a']
+                signal_loc_inductor = self.refpoints['inductor_ground']
             except KeyError:
-                signal_loc_cap = pya.DPoint(0, 0)
+                # Fallback to a reasonable location
+                signal_loc_inductor = pya.DPoint(self.l_coupling_length/2, self.ground_gap_bottom)
 
-            # Port on inductor - use ACRL source point if available
-            try:
-                signal_loc_inductor = self.refpoints['acrl_source_main_inductor']
-            except KeyError:
-                try:
-                    signal_loc_inductor = self.refpoints['inductor_ground']
-                except KeyError:
-                    # Fallback to a reasonable location
-                    signal_loc_inductor = pya.DPoint(0, -1000)
-
-            # Both ports use number=1, telling ANSYS they're the same electrical net
-            self.ports.append(
-                InternalPort(
-                    number=1,
-                    signal_location=signal_loc_cap,
-                    ground_location=None,
-                )
+        # Both ports use number=1, telling ANSYS they're the same electrical net
+        self.ports.append(
+            InternalPort(
+                number=1,
+                signal_location=signal_loc_feedline,
+                ground_location=None,
             )
+        )
 
-            self.ports.append(
-                InternalPort(
-                    number=1,  # Same number = same net
-                    signal_location=signal_loc_inductor,
-                    ground_location=None,
-                )
+        self.ports.append(
+            InternalPort(
+                number=1,  # Same number = same net
+                signal_location=signal_loc_inductor,
+                ground_location=None,
             )
+        )
 
 
 # Wave simulation class
-BaseSimClass_Wave = get_single_element_sim_class(ResonatorSpike)
+BaseSimClass_Wave = get_single_element_sim_class(BiasResonator)
 
-class SpikeResWaveSim(BaseSimClass_Wave):
-    """HFSS wave equation simulation for ResonatorSpike S-parameter measurement."""
+class BiasResWaveSim(BaseSimClass_Wave):
+    """HFSS wave equation simulation for BiasResonator S-parameter measurement."""
 
     def build(self):
         """Build simulation and add waveguide ports to feedlines."""
@@ -167,7 +162,7 @@ class SpikeResWaveSim(BaseSimClass_Wave):
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
-    description="Eigenmode + Wave simulation workflow with automatic mesh import"
+    description="Eigenmode + Wave simulation workflow for BiasResonator with automatic mesh import"
 )
 parser.add_argument(
     "--no-gui",
@@ -202,13 +197,16 @@ layout = get_active_or_new_layout()
 # ===========================
 
 eigenmode_sim_parameters = {
-    "name": "spike_res_eigenmode",
+    "name": "bias_res_eigenmode",
     "use_internal_ports": True,
     "use_ports": True,
-    "box": pya.DBox(pya.DPoint(-500, -4500), pya.DPoint(1000, 500)),
+    "box": pya.DBox(pya.DPoint(-1000, -4600), pya.DPoint(2000, 500)),
     "face_stack": ["1t1"],
 
-    # ResonatorSpike geometry parameters
+    # BiasResonator geometry parameters
+    "include_inductor": True,
+    "include_capacitor": True,
+    "enable_mesh_layers": True,
     "a": 4.6,
     "b": 10,
     "n": 24,
@@ -218,19 +216,19 @@ eigenmode_solution_parameters = {
     "ansys_tool": "eigenmode",
     "n_modes": 1,
     "min_frequency": 1,
-    "max_delta_f": 1,
+    "max_delta_f": 0.3,
     "maximum_passes": 10,
     "minimum_converged_passes": 2,
     "mesh_size": {
-        "1t1_mesh_2": 6,  # inductor
-        "1t1_mesh_3": 6,  # capacitor
+        "1t1_mesh_2": 8,  # Coarse mesh for inductor
+        "1t1_mesh_3": 4,  # Fine mesh for capacitor
     },
 }
 
 eigenmode_export_parameters = {
     "path": dir_path,
     "post_process": PostProcess("produce_epr_table.py"),
-    "exit_after_run": False,
+    "exit_after_run": True,
 }
 
 # ===========================
@@ -238,13 +236,16 @@ eigenmode_export_parameters = {
 # ===========================
 
 wave_sim_parameters = {
-    "name": "spike_res_wave",
+    "name": "bias_res_wave",
     "use_internal_ports": False,  # Edge ports for S-parameters
     "use_ports": True,
-    "box": pya.DBox(pya.DPoint(-2500, -4500), pya.DPoint(3500, 500)),  # Large box for waveguides
+    "box": pya.DBox(pya.DPoint(-3400, -4600), pya.DPoint(4400, 500)),  # Large box for waveguides
     "face_stack": ["1t1"],
 
-    # Same ResonatorSpike geometry
+    # Same BiasResonator geometry
+    "include_inductor": True,
+    "include_capacitor": True,
+    "enable_mesh_layers": True,
     "a": 4.6,
     "b": 10,
     "n": 24,
@@ -282,8 +283,9 @@ wave_export_parameters = {
 # Define parameter sweep (example - modify as needed)
 sweep_params = {
     # Example sweeps - uncomment/modify as needed:
-    # "l_coupling_distance": [12, 16, 20],  # Coupling strength (shared mode OK)
-    #"l_coupling_length": [100, 200, 400],       # Resonator length (use each mode)
+    "l_coupling_length": [60],  # Coupling strength (shared mode OK)
+    "l_coupling_distance": [64, 128, 256],  # Coupling strength (shared mode OK)
+    # "l_length": [3500, 4000, 4250, 4500, 5000],  # Resonator length (use each mode)
 }
 
 # ===========================
@@ -291,7 +293,7 @@ sweep_params = {
 # ===========================
 
 print("\n" + "="*70)
-print("Eigenmode + Wave Simulation Workflow")
+print("Eigenmode + Wave Simulation Workflow (BiasResonator)")
 print("="*70)
 print(f"Mode: {args.eigenmode_mode}")
 print(f"Sweep width: +/- {args.sweep_width/2} GHz around eigenfrequency")
@@ -301,19 +303,19 @@ print("="*70 + "\n")
 if args.eigenmode_mode == "each":
     # Mode 1: Eigenmode for EACH sweep point
     eigenmode_sims = cross_sweep_simulation(
-        layout, SpikeResHfssSim, eigenmode_sim_parameters, sweep_params
+        layout, BiasResEigenmodeSim, eigenmode_sim_parameters, sweep_params
     )
     print(f"Creating {len(eigenmode_sims)} eigenmode simulations (one per sweep point)")
 elif args.eigenmode_mode == "shared":
     # Mode 2: Single eigenmode simulation (no sweep)
     eigenmode_sims = cross_sweep_simulation(
-        layout, SpikeResHfssSim, eigenmode_sim_parameters, {}  # No sweep
+        layout, BiasResEigenmodeSim, eigenmode_sim_parameters, {}  # No sweep
     )
     print(f"Creating 1 shared eigenmode simulation (used for all sweep points)")
 
 # Create wave simulations (always sweep)
 wave_sims = cross_sweep_simulation(
-    layout, SpikeResWaveSim, wave_sim_parameters, sweep_params
+    layout, BiasResWaveSim, wave_sim_parameters, sweep_params
 )
 print(f"Creating {len(wave_sims)} wave simulations")
 
@@ -324,7 +326,7 @@ print(f"Creating {len(wave_sims)} wave simulations")
 db = SimulationDB()
 db_folders = db.register_simulations(
     simulations=eigenmode_sims + wave_sims,
-    design_name='spike_resonator',
+    design_name='bias_resonator',
     sim_parameters={**eigenmode_sim_parameters, **wave_sim_parameters},
     export_parameters={**eigenmode_solution_parameters, **eigenmode_export_parameters,
                       **wave_solution_parameters, **wave_export_parameters},
@@ -363,7 +365,7 @@ custom_script = Path(__file__).parent / "ansys" / "eigenmode_wave_batch.py"
 
 with open(bat_file, 'w') as f:
     f.write('@echo off\n')
-    f.write('title Eigenmode + Wave Simulations\n')
+    f.write('title Eigenmode + Wave Simulations (BiasResonator)\n')
     f.write('\n')
 
     if args.eigenmode_mode == "each":
@@ -431,7 +433,7 @@ with open(bat_file, 'w') as f:
             else:  # "shared" mode
                 eigen_name = eigenmode_sims[0].name
 
-            # Source file follows pattern: spike_res_eigenmode_XXX_and_spike_res_wave_XXX_SMatrix.s2p
+            # Source file follows pattern: bias_res_eigenmode_XXX_and_bias_res_wave_XXX_SMatrix.s2p
             src_file = f"{dir_path}\\{eigen_name}_and_{wave_name}_SMatrix.s2p"
             dst_folder = f"{sweep_folder}\\{wave_name}\\results"
             dst_file = f"{dst_folder}\\{wave_name}.s2p"

@@ -21,11 +21,15 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+import numpy as np
 
 from kqcircuits.pya_resolver import pya
 from kqcircuits.simulations.export.ansys.ansys_export import export_ansys
+from kqcircuits.simulations.export.ansys.ansys_solution import AnsysQ3dSolution
 from kqcircuits.simulations.export.simulation_export import (
     cross_sweep_simulation,
+    cross_sweep_solution,
+    cross_combine,
     export_simulation_oas,
 )
 
@@ -33,9 +37,9 @@ from kqcircuits.simulations.export.simulation_export import (
 sys.path.insert(0, str(Path(__file__).parents[4]))  # Add repo root to path
 from simulations_database.tools.simulation_db import SimulationDB
 
-from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
+from kqcircuits.elements.bias_resonator import BiasResonator
 from kqcircuits.simulations.post_process import PostProcess
-from kqcircuits.simulations.single_element_simulation import get_single_element_sim_class
+from kqcircuits.simulations.single_element_simulation import get_acrl_sim_class
 from kqcircuits.util.export_helper import (
     create_or_empty_tmp_directory,
     get_active_or_new_layout,
@@ -43,90 +47,73 @@ from kqcircuits.util.export_helper import (
 )
 
 # Parse command-line arguments
-parser = argparse.ArgumentParser(description="Run Q3D capacitance simulations on grounded finger capacitor")
+parser = argparse.ArgumentParser(description="Run Q3D ACRL simulations on bias resonator (extracts C, L, and R matrices)")
 parser.add_argument("--no-gui", action="store_true",
                     help="Don't open KLayout to view results (default: open KLayout)")
 parser.add_argument("--sweep-override", type=str, default=None,
-                    help="Override sweep parameters as JSON (e.g., '{\"finger_length\": [5, 10, 20]}')")
+                    help="Override sweep parameters as JSON (e.g., '{\"l_coupling_distance\": [2, 5, 10]}')")
 args = parser.parse_args()
 
 # Prepare output directory
 dir_path = create_or_empty_tmp_directory(Path(__file__).stem + "_output")
 
-# Create custom simulation class that adds a port to the center spike region
-BaseSimClass = get_single_element_sim_class(FingerCapacitorGroundV3)
+# Create ACRL simulation class using generic helper
+# This automatically detects ACRL refpoints (acrl_source_main_inductor, acrl_sink_main_inductor)
+# from the BiasResonator element and stores them in extra_json_data
+SimClass = get_acrl_sim_class(BiasResonator)
 
-class FingerCapacitorQ3dSim(BaseSimClass):
-    """Custom simulation class for Q3D capacitance measurement of spike regions.
-
-    Adds an internal port to the center spike region to make it a signal net.
-    The outer spike regions (physically separated) will be ground.
-    Q3D measures capacitance between center (SignalNet) and outer (GroundNet).
-    """
-
-    def build(self):
-        # Call parent build to create geometry
-        super().build()
-
-        # Clear default feedline ports
-        self.ports = []
-
-        # Add internal port to CENTER finger structure (makes it a signal net)
-        # Use the signal_location reference point from the element geometry
-        # This point is at the center of the structure, inside the center conductor
-        signal_loc = self.refpoints['signal_location']
-
-        from kqcircuits.simulations.port import InternalPort
-        self.ports.append(
-            InternalPort(
-                number=1,
-                signal_location=signal_loc,
-                ground_location=None,
-            )
-        )
-
-SimClass = FingerCapacitorQ3dSim
-
-# Simulation parameters for Q3D capacitance measurement
+# Simulation parameters for Q3D ACRL measurement
 sim_parameters = {
-    "name": "finger_capacitor_q3d",
-    "use_internal_ports": True,   # Use internal port on center spike region
+    "name": "bias_resonator_acrl",
+    "use_internal_ports": True,   # Use internal ports for ACRL
     "use_ports": True,            # Enable port system
-    "box": pya.DBox(pya.DPoint(0, -3200), pya.DPoint(500, 1500)),
-    "ground_cutout_bool": True, 
+    "box": pya.DBox(pya.DPoint(-1500, -4600), pya.DPoint(2000, 500)),
     "face_stack": ["1t1"],
+
+    # Enable inductor for ACRL inductance measurement through inductor
+    "include_inductor": True,
+    "include_capacitor": True,
+
+    # Disable mesh layers for ACRL (ANSYS bug deletes mesh geometry instead of keeping it)
+    "enable_mesh_layers": False,
 }
 
-# Q3D export parameters
+# Q3D ACRL export parameters
 export_parameters = {
     "path": dir_path,
     "ansys_tool": "q3d",
-    "post_process": PostProcess("produce_cmatrix_table.py"),
+    # Use new post-processing script that handles C, L, and R matrices
+    "post_process": PostProcess("produce_matrix_tables.py"),
     "exit_after_run": False,
     "percent_error": 0.3,  # Reasonable accuracy (0.2-0.5 typical for production)
-    "minimum_converged_passes": 2,
+    "minimum_converged_passes": 3,
     "maximum_passes": 20,
-    "use_floating_islands": True,  # Treat isolated spike system as floating net
-    # Custom mesh refinement for accurate results in spike regions
-    "mesh_size": {
-        "1t1_mesh_4": 4,    # Fine mesh around spike regions (0.25 µm)
-    },
+    "use_floating_islands": True,  # Treat isolated system as floating net
+
+    "frequency_units": "GHz",
+
+    # NEW: Enable ACRL (AC Resistance and Inductance extraction)
+    # Source/sink locations will be read from acrl_source/sink refpoints in geometry
+    "solve_acrl": True,
+
+    # Mesh refinement disabled for ACRL due to ANSYS bug
+    # (Enable mesh_layers and uncomment this for non-ACRL simulations)
+    # "mesh_size": {
+    #     "1t1_mesh_2": 5,    # Mesh over inductor region for accurate inductance calculation
+    # },
 }
 
 # Get layout
 logging.basicConfig(level=logging.WARN, stream=sys.stdout)
 layout = get_active_or_new_layout()
 
-# Parameter sweeps
-simulations = []
-
 # Define base sweep parameters (can be overridden via --sweep-override)
 import json
 sweep_params = {
-    #"finger_number": [30, 40, 50],
-    #"finger_length": [20, 50, 100],
-    #"finger_width": [1, 2, 3, 5, 10, 20],
-    #"finger_gap": [2, 3, 5],
+    # Example sweeps - uncomment as needed
+    # "l_length": [3500, 4000, 4250, 4500, 5000],
+    # "l_coupling_distance": [2, 4, 6, 8, 10],
+    # "l_width": [2, 3, 4, 5, 6],
 }
 
 # Apply sweep overrides if provided
@@ -138,8 +125,8 @@ if args.sweep_override:
     except json.JSONDecodeError as e:
         print(f"Warning: Could not parse sweep overrides: {e}")
 
-# Sweep spike number to characterize capacitance vs number of fingers
-simulations += cross_sweep_simulation(
+# Create geometry simulations
+simulations = cross_sweep_simulation(
     layout,
     SimClass,
     sim_parameters,
@@ -150,24 +137,24 @@ simulations += cross_sweep_simulation(
 db = SimulationDB()
 db_folders = db.register_simulations(
     simulations=simulations,
-    design_name='finger_cap_grounded',
+    design_name='bias_resonator',
     sim_parameters=sim_parameters,
     export_parameters=export_parameters,
     output_folder=dir_path
 )
 
-# Export Ansys Q3D files
+# Export Ansys Q3D files with ACRL enabled
 export_ansys(simulations, **export_parameters)
 
 # Write oas file
 oas_file = export_simulation_oas(simulations, dir_path)
-print(f"Exported Q3D simulation files to: {dir_path}")
+print(f"\nExported Q3D ACRL simulation files to: {dir_path}")
 print(f"OAS file: {oas_file}")
-print(f"Number of simulations: {len(simulations)}")
+print(f"Number of geometry variations: {len(simulations)}")
 
 # Print next steps for database workflow
 print(f"\n{'='*60}")
-print(f"→ Next step:")
+print(f"Next step:")
 print(f"  Run ANSYS simulations: {dir_path}/simulation.bat")
 print(f"  (Results will be automatically saved to database)")
 print(f"{'='*60}\n")
@@ -176,4 +163,4 @@ print(f"{'='*60}\n")
 if not args.no_gui:
     open_with_klayout_or_default_application(oas_file)
 else:
-    print("Skipping KLayout GUI (--no-gui flag set)")
+    print("\nSkipping KLayout GUI (--no-gui flag set)")

@@ -78,6 +78,7 @@ class MaskLayout:
         mask_name_scale: text scaling factor for mask name label (float)
         mask_name_box_margin: margin around the mask name that determines the box size around the name (float)
         mask_name_label: if True (default), adds mask name label at top of wafer. Set False to disable.
+        mask_sub_label: optional secondary label string shown below the mask name label, at roughly half the text size.
         center_on_wafer: if True, centers the chip grid on the wafer. For even grid dimensions (e.g., 8x8),
             chip edges align with the wafer center. For odd dimensions (e.g., 9x9), one chip is centered.
         mask_text_scale: text scaling factor for graphical representation layer (float)
@@ -141,6 +142,7 @@ class MaskLayout:
         self.mask_name_scale = kwargs.get("mask_name_scale", 1)
         self.mask_name_box_margin = kwargs.get("mask_name_box_margin", 1000)
         self.mask_name_label = kwargs.get("mask_name_label", True)  # Set False to disable mask name label
+        self.mask_sub_label = kwargs.get("mask_sub_label", "")
         self.center_on_wafer = kwargs.get("center_on_wafer", False)  # Center the chip grid on the wafer
         self.mask_text_scale = kwargs.get("mask_text_scale", default_mask_parameters[self.face_id]["mask_text_scale"])
         self.mask_markers_dict = kwargs.get("mask_markers_dict", {Marker: {}, MaskMarkerFc: {}})
@@ -253,6 +255,8 @@ class MaskLayout:
         else:
             # Set to wafer_rad so no chips are excluded at the top due to label
             self._mask_name_box_bottom_y = self.wafer_rad
+        if self.mask_sub_label:
+            self._insert_mask_sub_label(self.top_cell, default_layers["mask_graphical_rep"])
         # add chips from chips_map
         if isinstance(self.chips_map, dict):
             self._add_chips_map_dict(self.chip_size, marker_region)
@@ -699,6 +703,21 @@ class MaskLayout:
         cell_mask_name, trans = self._create_mask_name_label(layer, postfix)
         inst = cell.insert(pya.DCellInstArray(cell_mask_name.cell_index(), trans))
         return inst
+
+    def _insert_mask_sub_label(self, cell, layer):
+        sub_cell = self.layout.create_cell(
+            "TEXT", "Basic",
+            {"layer": layer, "text": self.mask_sub_label, "mag": self.mask_name_scale * 2500.0},
+        )
+        sh = sub_cell.dbbox().height()
+        sw = sub_cell.dbbox().width()
+        y = self._mask_name_box_bottom_y - sh - self.mask_name_box_margin
+        trans = pya.DTrans(-sw / 2, y)
+        if self.mirror_labels:
+            trans *= pya.DTrans(2, True, -2 * trans.disp.x, 0)
+        cell.insert(pya.DCellInstArray(sub_cell.cell_index(), trans))
+        if self.mask_name_label:
+            self._mask_name_box_bottom_y = y - self.mask_name_box_margin
 
     def _create_mask_name_label(self, layer, postfix=""):
         if postfix != "":

@@ -25,8 +25,7 @@ from kqcircuits.elements.launcher import Launcher
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
-from kqcircuits.elements.fin_met import FinMet
-from kqcircuits.elements.bias_resonator_2 import BiasResonator2
+from kqcircuits.elements.pomeroy_double_res import PomeroyDoubleRes
 from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
@@ -37,7 +36,6 @@ from kqcircuits.elements.element import Element
 
 from kqcircuits.util.library_helper import load_libraries
 
-import os
 import numpy as np
 
 
@@ -52,8 +50,7 @@ import numpy as np
     face_boxes=[None, pya.DBox(pya.DPoint(0, 0), pya.DPoint(5200, 5200))],
     frames_dice_width=[50, 50],
     name_brand="RKR",
-    name_brand_size = 200,
-    name_chip="FM1",
+    name_chip="T4P",
     frames_marker_dist=[250, 250],
     name_mask="tt",
     name_copy="",
@@ -64,15 +61,51 @@ import numpy as np
 # @add_parameters_from(Junction, "junction_type")
 
 
-class FinRfSquidChip(Chip):
+class TemplateFourPortChip(Chip):
     # CPW parameters for resonator and capacitor
-    
+    a = Param(pdt.TypeDouble, "CPW center conductor width", 10, unit="μm")
+    b = Param(pdt.TypeDouble, "CPW gap width", 5.85, unit="μm")
 
+    a_launcher = Param(pdt.TypeDouble, "Pad CPW trace center", 200, unit="μm")
+    b_launcher = Param(pdt.TypeDouble, "Pad CPW trace gap", 153, unit="μm")
+    launcher_width = Param(pdt.TypeDouble, "Pad extent", 250, unit="μm")
+    taper_length = Param(pdt.TypeDouble, "Tapering length", 200, unit="μm")
+    launcher_frame_gap = Param(pdt.TypeDouble, "Gap at chip frame", 100, unit="μm")
+    launcher_indent = Param(pdt.TypeDouble, "Chip edge to pad port", 975, unit="μm")
+    launcher_y_position = Param(pdt.TypeDouble, "Launcher vertical position", 2750*2, unit="μm")
+
+    def produce_four_launchers(self, a_launcher, b_launcher, launcher_width, taper_length, launcher_frame_gap, 
+                              launcher_indent, pad_pitch, launcher_assignments=None,  enabled=None, chip_box=None,
+                            face_id=0):
+        
+        launcher_cell = self.add_element(Launcher, s=launcher_width, l=taper_length,
+                                             a_launcher=a_launcher, b_launcher=b_launcher,
+                                             launcher_frame_gap=launcher_frame_gap, face_ids=[self.face_ids[face_id]])
+
+        pads_per_side = [0,2,0,2]
+
+        dirs = (90, 0, -90, 180)
+        trans = (pya.DTrans(3, 0, self.box.p1.x, self.box.p2.y),
+                 pya.DTrans(2, 0, self.box.p2.x, self.box.p2.y),
+                 pya.DTrans(1, 0, self.box.p2.x, self.box.p1.y),
+                 pya.DTrans(0, 0, self.box.p1.x, self.box.p1.y))
+        _w = self.box.p2.x - self.box.p1.x
+        _h = self.box.p2.y - self.box.p1.y
+        sides = [_w, _h, _w, _h]
+
+        return self._insert_launchers(dirs, enabled, launcher_assignments, None, launcher_cell, launcher_indent,
+                                      launcher_width, pad_pitch, pads_per_side, sides, trans, face_id=0)
+
+    
     def produce_ground_grid(self):
         # no ground grid on test junction chip
         pass
 
     def build(self):
+        self.launchers = self.produce_four_launchers(self.a_launcher, self.b_launcher, self.launcher_width,
+                                   self.taper_length, self.launcher_frame_gap, self.launcher_indent, self.launcher_y_position, launcher_assignments={1: "W1", 2: "W2", 3:"E2", 4:"E1"})
+        
+
         # when not running as a macro in KLayout have to load the kqc libraries
         #load_libraries(path=Qubit.LIBRARY_PATH)
         #qubit_cell = self.layout.create_cell("BR1", Qubit.LIBRARY_NAME)
@@ -130,7 +163,7 @@ class FinRfSquidChip(Chip):
 
         produce_label(
             self.cell,
-            label="R K Romani + TFL",
+            label="R K Romani",
             location=pya.DPoint(test_structure_region_x - 320, test_structure_region_y - 150),
             origin=LabelOrigin.TOPLEFT,
             origin_offset=0,
@@ -139,46 +172,3 @@ class FinRfSquidChip(Chip):
             layer_protection=self.face()["ground_grid_avoidance"],
             size=50,
         )
-
-        produce_label(
-            self.cell,
-            label="UCSB",
-            location=pya.DPoint(test_structure_region_x - 350, test_structure_region_y + 420),
-            origin=LabelOrigin.TOPLEFT,
-            origin_offset=0,
-            margin=10,
-            layers=[self.face()["base_metal_gap_wo_grid"]],
-            layer_protection=self.face()["ground_grid_avoidance"],
-            size=200,
-        )
-
-
-
-        # Load the RF SQUID design from OAS file, remapping layer 1 -> base_metal_gap_wo_grid
-        squid_layout = pya.Layout()
-        squid_path = os.path.join(os.path.dirname(__file__), "..", "elements", "2604_FinLER_Base_mod.oas")
-        squid_layout.read(squid_path)
-        squid_cell = squid_layout.top_cell()
-        src_layer = squid_layout.layer(1, 0)
-        squid_region = pya.Region(squid_cell.begin_shapes_rec(src_layer))
-        self.cell.shapes(self.get_layer("base_metal_gap_wo_grid", 0)).insert(squid_region)
-
-
-        fin_cutout_ll_y = 1887
-        fin_cutout_ll_x = 1886
-        cutout_width = 360
-        cutout_height = 20
-        #additional cutout for fin
-        pts_cutout = [
-                pya.DPoint(fin_cutout_ll_x, fin_cutout_ll_y),
-                pya.DPoint(fin_cutout_ll_x + cutout_height, fin_cutout_ll_y),
-                pya.DPoint(fin_cutout_ll_x + cutout_height, fin_cutout_ll_y + cutout_width),
-                pya.DPoint(fin_cutout_ll_x, fin_cutout_ll_y + cutout_width)
-                ]
-        cutout_region = pya.Region(pya.DPolygon(pts_cutout).to_itype(self.layout.dbu))
-        self.cell.shapes(self.get_layer("base_metal_gap_wo_grid", 0)).insert(cutout_region)
-
-        src_layer_30 = squid_layout.layer(30, 30)
-        sis_region = pya.Region(squid_cell.begin_shapes_rec(src_layer_30))
-        self.cell.shapes(self.get_layer("SIS_shadow", 0)).insert(sis_region)
-            

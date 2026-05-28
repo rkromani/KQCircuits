@@ -30,6 +30,7 @@ from geometry import (  # pylint: disable=wrong-import-position
     create_box,
     create_rectangle,
     create_polygon,
+    create_trench_wall_polygon,
     thicken_sheet,
     set_material,
     add_layer,
@@ -190,6 +191,18 @@ for lname, ldata in layers.items():
 
     set_color(oEditor, objects[lname], *color_by_material(material, material_dict, thickness == 0.0))
 
+# Create vertical wall sheets for conformal metal on trench sidewalls
+trench_wall_segments = data.get("trench_wall_segments", [])
+for idx, seg in enumerate(trench_wall_segments):
+    x1, y1, x2, y2, z_bottom, z_top = seg
+    # Skip degenerate (zero-length) segments
+    if x1 == x2 and y1 == y2:
+        continue
+    wall_name = "TrenchWall_{}".format(idx)
+    create_trench_wall_polygon(oEditor, wall_name, x1, y1, x2, y2, z_bottom, z_top, units)
+    set_color(oEditor, [wall_name], 240, 120, 240, 0.5)  # same color as PEC metal
+    metal_sheets.append(wall_name)
+
 # Assign perfect electric conductor to metal sheets
 if metal_sheets:
     if ansys_tool in hfss_tools:
@@ -272,14 +285,36 @@ if ansys_tool in hfss_tools:
                         break
 
                 if lumped_layer_name and lumped_layer_name in objects:
-                    # Use the first object from lumped_rlc layer
-                    polyname = objects[lumped_layer_name][0]
+                    # Find the lumped_rlc object nearest to this port's signal_location.
+                    # Required when multiple lumped elements share the same layer (e.g. two fins).
+                    sig = port["signal_location"]
+                    best_obj = objects[lumped_layer_name][0]
+                    if len(objects[lumped_layer_name]) > 1:
+                        best_dist = float('inf')
+                        for obj in objects[lumped_layer_name]:
+                            try:
+                                xs, ys = [], []
+                                for edge in oEditor.GetEdgeIDsFromObject(obj):
+                                    for vid in oEditor.GetVertexIDsFromEdge(edge):
+                                        pos = oEditor.GetVertexPosition(vid)
+                                        xs.append(float(pos[0]))
+                                        ys.append(float(pos[1]))
+                                if xs:
+                                    cx = sum(xs) / len(xs)
+                                    cy = sum(ys) / len(ys)
+                                    dist = ((cx - sig[0])**2 + (cy - sig[1])**2)**0.5
+                                    if dist < best_dist:
+                                        best_dist = dist
+                                        best_obj = obj
+                            except:
+                                pass
+                    polyname = best_obj
                 else:
                     # Fallback: skip this port if no lumped_rlc layer found
                     oDesktop.AddMessage("", "", 2, "Warning: No lumped_rlc layer found for port %d" % port["number"])
                     continue
 
-            if ansys_tool == "hfss":
+            if ansys_tool == "hfss" and not is_lumped and not is_junction:
                 ground_objects = [o for n, d in metal_layers.items() if d["excitation"] == 0 for o in objects[n]]
                 oBoundarySetup.AutoIdentifyPorts(
                     ["NAME:Faces", int(oEditor.GetFaceIDs(polyname)[0])],

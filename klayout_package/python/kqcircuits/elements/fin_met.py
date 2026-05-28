@@ -58,7 +58,7 @@ class FinMet(Element):
     fin_dbexpose_width = Param(pdt.TypeDouble, "Width of double expose region around fins", 10, unit="μm")
 
     enable_resistance_probe = Param(pdt.TypeBoolean, "Whether to add probe structures for resistance measurements", False)
-    probe_lead_length = Param(pdt.TypeDouble, "Length of probe leads", 1000, unit="μm")
+    probe_lead_length = Param(pdt.TypeDouble, "Length of probe leads", 700, unit="μm")
     probe_pad_size = Param(pdt.TypeDouble, "Size of probe pads", 200, unit="μm")
     probe_region_offset = Param(pdt.TypeDouble, "Offset of probed region from fin center", 100, unit="μm")
     probe_region_width = Param(pdt.TypeDouble, "Width of probed region", 10, unit="μm")

@@ -21,8 +21,8 @@
 from pathlib import Path
 
 from kqcircuits.chips.chip import Chip
-from kqcircuits.chips.fin_met_chip import FinMetChip
-from kqcircuits.chips.fin_rf_squid_chip import FinRfSquidChip
+from kqcircuits.chips.pomeroy_res_chip import PomeroyResChip
+from kqcircuits.chips.pomeroy_double_res_chip import PomeroyDoubleResChip
 from kqcircuits.chips.blank_chip import BlankChip
 from kqcircuits.masks.mask_set import MaskSet
 from kqcircuits.masks.mask_export import get_mask_layout_full_name
@@ -38,12 +38,12 @@ load_libraries(path="test_structures")
 
 if __name__ == "__main__":
     mdemo = MaskSet(
-        name="FinMET1",
+        name="Pomeroy1",
         version=5,
         with_grid=False,
-        mask_export_layers=["base_metal_gap_wo_grid", "SIS_shadow", "SIS_junction_2", "chip_dicing"],
+        mask_export_layers=["base_metal_gap_wo_grid", "SIS_junction", "chip_dicing"],
         export_path=TMP_PATH,
-        name_date="260514",  # <-- date/version label on every chip; update each run
+        name_date="260527",  # <-- date/version label on every chip; update each run
     )
 
     layers_to_mask = {"base_metal_gap_wo_grid": "1"}
@@ -94,14 +94,14 @@ if __name__ == "__main__":
     # Bottom face (1t1) mask
     mdemo.add_mask_layout(
         [
-            ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
+            ["---", "---",   "PRA",   "PRB",   "PRT",   "PRD",   "PRA",   "---",  "---"],
+            ["---", "PRB",   "PRT",   "PRD",   "PRA",   "PRB",   "PRT",   "PRD",  "---"],
+            ["---", "PRA",   "PRB",   "PRT",   "PRD",   "PRA",   "PRB",   "PRT",  "---"],
+            ["---", "PRD",   "PRA",   "PRB",   "PRT",   "PRD",   "PRA",   "PRB",  "---"],
+            ["---", "PRT",   "PRD",   "PRA",   "PRB",   "PRT",   "PRD",   "PRA",  "---"],
+            ["---", "PRB",   "PRT",   "PRD",   "PRA",   "PRB",   "PRT",   "PRD",  "---"],
+            ["---", "PRA",   "PRB",   "PRT",   "PRD",   "PRA",   "PRB",   "PRT",  "---"],
+            ["---", "---",   "PRD",   "PRA",   "PRB",   "PRT",   "PRD",   "---",  "---"],
         ],
         "1t1",
         layers_to_mask=layers_to_mask,
@@ -118,9 +118,10 @@ if __name__ == "__main__":
     # chip definitions
     mdemo.add_chip(
         [
-            (FinMetChip, "FMET", {"enable_resistance_probe": False}),
-            (FinMetChip, "FMETR", {"enable_resistance_probe": True}),  # variant without resistance probe structures
-            (FinRfSquidChip, "FLER"),
+            (PomeroyResChip, "PRA"),
+            (PomeroyResChip, "PRB", {'first_cap_gone':False, 'cap_dims_x':[2, 2, 2, 2, 3, 3, 4], 'cap_dims_y':[2, 2.5, 3, 4, 4, 4.75, 4]} ),
+            (PomeroyTestChip, "PRT"),
+            (PomeroyDoubleResChip, "PRD"),
             #(QualityFactor, "BR1", {"n_ab": [1, 2, 3, 4, 5, 6]}),
         ]
     )

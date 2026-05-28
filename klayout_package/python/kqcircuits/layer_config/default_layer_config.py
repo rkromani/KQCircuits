@@ -96,6 +96,7 @@ _common_b_t_layers = {
     # Defines geometry for lumped RLC boundary attachment in ANSYS
     # Exported as non-model surface (material=None) for boundary assignments
     "lumped_rlc": (33, 1),  # Lumped RLC element attachment geometry
+    "trench_etch": (34, 1),  # Substrate trench region for 3D conformal metal simulation
 }
 
 

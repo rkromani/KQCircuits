@@ -25,9 +25,7 @@ from kqcircuits.elements.launcher import Launcher
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
-from kqcircuits.elements.fin_met import FinMet
-from kqcircuits.elements.bias_resonator_2 import BiasResonator2
-from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
+from kqcircuits.elements.hanger_resonator_l4 import HangerResonatorL4
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
 from kqcircuits.util.label import produce_label, LabelOrigin
@@ -63,7 +61,7 @@ import numpy as np
 # @add_parameters_from(Junction, "junction_type")
 
 
-class FinMetChip(Chip):
+class CpwResChip(Chip):
     # CPW parameters for resonator and capacitor
     a = Param(pdt.TypeDouble, "CPW center conductor width", 10, unit="μm")
     b = Param(pdt.TypeDouble, "CPW gap width", 5.85, unit="μm")
@@ -157,7 +155,7 @@ class FinMetChip(Chip):
 
         produce_label(
             self.cell,
-            label="R K Romani + TFL",
+            label="R K Romani",
             location=pya.DPoint(test_structure_region_x - 320, test_structure_region_y - 150),
             origin=LabelOrigin.TOPLEFT,
             origin_offset=0,
@@ -165,18 +163,6 @@ class FinMetChip(Chip):
             layers=[self.face()["base_metal_gap_wo_grid"]],
             layer_protection=self.face()["ground_grid_avoidance"],
             size=50,
-        )
-
-        produce_label(
-            self.cell,
-            label="UCSB",
-            location=pya.DPoint(test_structure_region_x - 350, test_structure_region_y + 420),
-            origin=LabelOrigin.TOPLEFT,
-            origin_offset=0,
-            margin=10,
-            layers=[self.face()["base_metal_gap_wo_grid"]],
-            layer_protection=self.face()["ground_grid_avoidance"],
-            size=200,
         )
 
 
@@ -196,47 +182,40 @@ class FinMetChip(Chip):
 
         center_y = 7500/2 + 5
         start_x = 1437.22 + 0.35/2 - 25.095 + 12.5
-        double_spacing = 1396.036
-        single_spacing = 1396.036 - 912.536
+        spacing = 5555/8
         n_elements = 8        
         
         base_length = 3950
-        spacing = 0.025
-        element_params = [{'feedline_length': 10, 'res_length': base_length*(1-3*spacing), 'coupler_width': 27, "probe_region_width": 5}, 
-                          {'feedline_length': 10, 'res_length': base_length*(1-2*spacing), 'coupler_width': 27, "probe_region_width": 10}, 
-                          {'feedline_length': 10, 'res_length': base_length*(1-1*spacing), 'coupler_width': 27}, {'feedline_length': 10, 'res_length': base_length*1, 'coupler_width': 27},
-                          {'feedline_length': 10, 'res_length': base_length*(1+1*spacing), 'coupler_width': 48}, {'feedline_length': 10, 'res_length': base_length*(1+2*spacing), 'coupler_width': 48}, 
-                          {'feedline_length': 10, 'res_length': base_length*(1+3*spacing), 'coupler_width': 48, "probe_region_width": 50}, 
-                          {'feedline_length': 10, 'res_length': base_length*(1+4*spacing), 'coupler_width': 48, "probe_region_width": 50},]
+        spacing_freq = 0.05
+        element_params = [{'feedline_length': 10, 'res_length': base_length*(1-3*spacing_freq)}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1-2*spacing_freq)}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1-1*spacing_freq)},
+                          {'feedline_length': 10, 'res_length': base_length*1},
+                          {'feedline_length': 10, 'res_length': base_length*(1+1*spacing_freq)}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1+2*spacing_freq)}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1+3*spacing_freq)}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1+4*spacing_freq)},]
         i = 0
         while i < n_elements:
+            distance_from_start = spacing * i
             if i % 2 == 0:
-                distance_from_start = double_spacing * i/2
                 flip = 0
                 mirror = True
             else:
-                distance_from_start = double_spacing * (i-1)/2 + single_spacing
                 flip = 0
                 mirror = False
             coord = pya.DTrans(flip, mirror, start_x + distance_from_start, center_y)
 
-            if i == 0:
-                probe_bool = True,
-            else:
-                probe_bool = False,
-
             if self.enable_resistance_probe:
                 self.insert_cell(
-                    FinMet, coord, f"FM{i}", 
+                    HangerResonatorL4, coord, f"R{i}", 
                     feedline_cutout_bool=False,
-                    enable_resistance_probe=(True if ((i == 1) | (i == 7)) else False),
                     **element_params[i],
                 )
             else:
                 self.insert_cell(
-                    FinMet, coord, f"FM{i}", 
+                    HangerResonatorL4, coord, f"R{i}", 
                     feedline_cutout_bool=False,
-                    enable_resistance_probe=False,
                     **element_params[i],
                 )
 
@@ -268,15 +247,15 @@ class FinMetChip(Chip):
 
         launcher_feed_middle = ((-self.refpoints["W1_port"].x + self.refpoints["E1_port"].x)/2)
         self.refpoints["launcher_feed_middle_l1"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["E1_port"].y)
-        self.refpoints["launcher_feed_middle_l2"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["FM0_feedline_b"].y)
+        self.refpoints["launcher_feed_middle_l2"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["R0_feedline_b"].y)
         self.refpoints["launcher_feed_middle_r1"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints["W1_port"].y)
-        self.refpoints["launcher_feed_middle_r2"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints[f"FM{n_elements-1}_feedline_b"].y)
+        self.refpoints["launcher_feed_middle_r2"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints[f"R{n_elements-1}_feedline_b"].y)
         left_ref_names = ["W1_port"]
         right_ref_names = []
         i = 0
         while i < n_elements:
-            left_ref_names.append(f"FM{i}_feedline_a")
-            right_ref_names.append(f"FM{i}_feedline_b")
+            left_ref_names.append(f"R{i}_feedline_a")
+            right_ref_names.append(f"R{i}_feedline_b")
             i += 1
         right_ref_names.append("E1_port")
 

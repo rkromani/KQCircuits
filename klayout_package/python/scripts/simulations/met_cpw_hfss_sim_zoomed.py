@@ -193,9 +193,10 @@ sim_parameters = {
     "use_ports": True,
 
     # Small zoomed-in simulation box around junction region
-    # Calculated based on junction positions with 50 µm buffer
-    # Junction positions: cpw_end_x ~1625, met_center_x ~1636, cpw_end_y ~-2883
-    "box": pya.DBox(pya.DPoint(1575, -2933), pya.DPoint(1686, -2833)),
+    # Calculated based on actual junction positions with 50 µm buffer
+    # Junction positions from geometry: X~2505-2516, Y~-4266
+    # Box: 100 µm buffer around junctions
+    "box": pya.DBox(pya.DPoint(2400, -4370), pya.DPoint(2620, -4170)),
 
     # Face stack configuration
     "face_stack": ["1t1"],
