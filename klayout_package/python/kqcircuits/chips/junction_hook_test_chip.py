@@ -25,7 +25,7 @@ from kqcircuits.elements.launcher import Launcher
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
-from kqcircuits.elements.pomeroy_res import PomeroyRes
+from kqcircuits.junctions.rkr_hook_junction_2 import RKRHook2
 from kqcircuits.elements.alignment_pomeroy_local import AlignmentPomeroyLocal
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
@@ -51,7 +51,7 @@ import numpy as np
     frames_dice_width=[50, 50],
     name_brand="RKR",
     name_brand_size = 200, 
-    name_chip="PR1",
+    name_chip="JTH",
     frames_marker_dist=[250, 250],
     name_mask="tt",
     name_copy="",
@@ -62,7 +62,7 @@ import numpy as np
 # @add_parameters_from(Junction, "junction_type")
 
 
-class PomeroyResChip(Chip):
+class JunctionHookTestChip(Chip):
     # CPW parameters for resonator and capacitor
     a = Param(pdt.TypeDouble, "CPW center conductor width", 10, unit="μm")
     b = Param(pdt.TypeDouble, "CPW gap width", 5.85, unit="μm")
@@ -73,13 +73,11 @@ class PomeroyResChip(Chip):
     taper_length = Param(pdt.TypeDouble, "Tapering length", 200, unit="μm")
     launcher_frame_gap = Param(pdt.TypeDouble, "Gap at chip frame", 100, unit="μm")
     launcher_indent = Param(pdt.TypeDouble, "Chip edge to pad port", 975, unit="μm")
+
+    wiring_pads = Param(pdt.TypeBoolean, "Whether to use wiring layer pads", True)
     
     date_label = Param(pdt.TypeString, "Date/version label printed on chip", "")
-
-    first_cap_gone = Param(pdt.TypeBoolean, "Whether the first capacitance is there to allow for measurement of parasitic capacitance", True)
-    cap_dims_x = Param(pdt.TypeList, "X dimension of capacitors", [0.0, 0.5, 1, 1, 2, 2, 2, 2], unit="μm")
-    cap_dims_y = Param(pdt.TypeList, "Y dimension of capacitors", [0.0, 0.5, 1, 2, 2, 2.5, 3, 4], unit="μm")
-    extra_cap_height = Param(pdt.TypeDouble, "Height of extra planar capacitor", 80, unit="μm")
+    label_text = Param(pdt.TypeString, "Text to label chip with", "")
     
 
     # parameters to pass to junctions
@@ -129,19 +127,19 @@ class PomeroyResChip(Chip):
                                                 test_structure_region_y - 155), 
                                                 "res")
 
-        self.insert_cell(Profilometer, pya.DTrans(0, False,
+        """ self.insert_cell(Profilometer, pya.DTrans(0, False,
                                                   test_structure_region_x - 112.5,
                                                   test_structure_region_y - 450),
-                                                  "pro")
+                                                  "pro")"""
         
         
-        #load_libraries(path=TestStructure.LIBRARY_PATH)
-        #AMPLogo = self.layout.create_cell("AMPlogo", TestStructure.LIBRARY_NAME)
+        load_libraries(path=TestStructure.LIBRARY_PATH)
+        AMPLogo = self.layout.create_cell("AMPlogo", TestStructure.LIBRARY_NAME)
 
-        #self.insert_cell(AMPLogo, pya.DCplxTrans(0.5, 0, False,
-        #                                          test_structure_region_x - 30, 
-        #                                          test_structure_region_y - 90), 
-        #                                          "logo")
+        self.insert_cell(AMPLogo, pya.DCplxTrans(0.5, 0, False,
+                                                  test_structure_region_x - 30, 
+                                                  test_structure_region_y - 90), 
+                                                  "logo")
 
         load_libraries(path=Element.LIBRARY_PATH)
         NISTlogo = self.layout.create_cell("NISTlogo", Element.LIBRARY_NAME)
@@ -165,104 +163,96 @@ class PomeroyResChip(Chip):
             size=50,
         )
 
-
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 - 2500,
-                                                  3750 - 2500),
-                                                  "alignment_local")
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 + 2500,
-                                                  3750 - 2500),
-                                                  "alignment_local")
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 - 2500,
-                                                  3750 + 2500),
-                                                  "alignment_local")
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 + 2500,
-                                                  3750 + 2500),
-                                                  "alignment_local")
-
-
-
-        self.insert_cell(
-            Launcher, pya.DTrans(2, False, self.launcher_indent, 7500/2 + 5), f"W1",
-            a=self.a, b=self.b,
-        )
-        self.insert_cell(
-            Launcher, pya.DTrans(0, False, 7500-self.launcher_indent, 7500/2 + 5), f"E1",
-            a=self.a, b=self.b,
+        produce_label(
+            self.cell,
+            label="Hook Junctions",
+            location=pya.DPoint(1000, 6500),
+            origin=LabelOrigin.TOPLEFT,
+            origin_offset=0,
+            margin=10,
+            layers=[self.face()["base_metal_gap_wo_grid"]],
+            layer_protection=self.face()["ground_grid_avoidance"],
+            size=100,
         )
 
-
-
-        BR_coords = []
-
-        center_y = 7500/2 + 5
-        start_x = 1500
-        n_elements = 8        
-        spacing = (7500 - start_x*2)/(n_elements - 1)
         
-        #cap_dims_x = np.asarray([0.0, 0.5, 1, 1, 2, 2, 2, 2])
-        #cap_dims_y = np.asarray([0.0, 0.5, 1, 2, 2, 2.5, 3, 4])
-        element_params = []
-        i = 0
-        while i < n_elements:
-            if (i == 0) and (self.first_cap_gone):
-                element_params.append({'include_ebeam': False, 'extra_cap_height': self.extra_cap_height})
-            else:
-                element_params.append({'cap_width': self.cap_dims_x[i], 'cap_height': self.cap_dims_y[i], 'extra_cap_height': self.extra_cap_height})
-            i += 1
+        produce_label(
+            self.cell,
+            label=self.label_text,
+            location=pya.DPoint(3000, 6500),
+            origin=LabelOrigin.TOPLEFT,
+            origin_offset=0,
+            margin=10,
+            layers=[self.face()["base_metal_gap_wo_grid"]],
+            layer_protection=self.face()["ground_grid_avoidance"],
+            size=100,
+        )
+
+
+
+
+        #pad_width = 200
+        #pad_height = 200
+        pad_width = 14
+        pad_height = 6
+        taper_width = 10
+        lead_offset = 2
+        hook_overshoot = 3
+        bridge_lengths = np.asarray([0.1, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 4])
+        hook_widths = np.asarray([0.1, 0.196, 0.3, 0.5])
+
+
+        chip_center_x = 7500/2
+        chip_center_y = 7500/2
+        n_junction_x_group = 5
+        n_junction_x = n_junction_x_group * len(hook_widths)
+        n_junction_y = len(bridge_lengths)
+        spacing_x = 250
+        spacing_x_big = 1400
+        spacing_y = 500
+        start_x = chip_center_x - (n_junction_x_group - 1)/2 * spacing_x - (len(hook_widths)-1)/2 * spacing_x_big
+        start_y = chip_center_y - n_junction_y/2 * spacing_y
+        stop_x = chip_center_x + (n_junction_x)/2 * spacing_x
+        stop_y = chip_center_y + (n_junction_y)/2 * spacing_y
+        #pos_x = np.linspace(start_x, stop_x, n_junction_x)
+        pos_y = np.linspace(start_y, stop_y, n_junction_y)
+
+        pos_x = np.array([
+                          start_x + i*spacing_x + j*spacing_x_big 
+                          for i in range(n_junction_x_group) 
+                          for j in range(len(hook_widths))
+                          ])
+        pos_x = np.sort(pos_x)
 
         i = 0
-        while i < n_elements:
-            distance_from_start = spacing * i
-            if i % 2 == 0:
-                rotate = 0
-                offset_y = -1400
-            else:
-                rotate = 2
-                offset_y = 1400
-            coord = pya.DTrans(rotate, False, start_x + distance_from_start, center_y)
+        while i < n_junction_x:
+            j = 0
+            while j < n_junction_y:
+                coord = pya.DTrans(0, False, pos_x[i], pos_y[j])
+                self.insert_cell(
+                    RKRHook2, coord, f"JJ_{i}_{j}", 
+                    wiring_pad_bool=self.wiring_pads,
+                    pad_height=pad_height, pad_width=pad_width, 
+                    lead_offset=lead_offset, taper_base=taper_width, hook_overshoot=hook_overshoot, 
+                    bridge_length=bridge_lengths[j],
+                    hook_width=hook_widths[int(i/5)]
+                    #**element_params[i],
+                )
 
-            self.insert_cell(
-                PomeroyRes, coord, f"R{i}", 
-                feedline_cutout_bool=False,
-                feedline_length = 400, 
-                **element_params[i],
-            )
+                if i % (n_junction_x_group) == 0:
+                    produce_label(
+                        self.cell,
+                        label=str(bridge_lengths[j]) + " x " + str(hook_widths[int(i/5)]),
+                        location=pya.DPoint(pos_x[i], pos_y[j] - spacing_y/2),
+                        origin=LabelOrigin.TOPLEFT,
+                        origin_offset=0,
+                        margin=10,
+                        layers=[self.face()["base_metal_gap_wo_grid"]],
+                        layer_protection=self.face()["ground_grid_avoidance"],
+                        size=50,
+                    )
 
-            offset_x = -180
-            produce_label(
-                self.cell,
-                label=str(self.cap_dims_x[i]) + " x " + str(self.cap_dims_y[i]),
-                location=pya.DPoint(start_x + distance_from_start + offset_x, center_y + offset_y),
-                origin=LabelOrigin.TOPLEFT,
-                origin_offset=0,
-                margin=10,
-                layers=[self.face()["base_metal_gap_wo_grid"]],
-                layer_protection=self.face()["ground_grid_avoidance"],
-                size=50,
-            )
-
+                j += 1
             i += 1
 
-        left_ref_names = ["W1_port"]
-        right_ref_names = []
-        i = 0
-        while i < n_elements:
-            left_ref_names.append(f"R{i}_feedline_a")
-            right_ref_names.append(f"R{i}_feedline_b")
-            i += 1
-        right_ref_names.append("E1_port")
 
-
-        for i in range(len(left_ref_names)):
-            self.insert_cell(
-                WaveguideComposite, 
-                nodes=[
-                    Node(self.refpoints[left_ref_names[i]]),
-                    Node(self.refpoints[right_ref_names[i]])
-                ],
-            )
-            

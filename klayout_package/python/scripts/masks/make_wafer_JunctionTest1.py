@@ -19,14 +19,16 @@
 """Demo mask."""
 
 from pathlib import Path
+import os
 
 from kqcircuits.chips.chip import Chip
-from kqcircuits.chips.fin_met_chip import FinMetChip
-from kqcircuits.chips.fin_rf_squid_chip import FinRfSquidChip
+from kqcircuits.chips.junction_hook_test_chip import JunctionHookTestChip
+from kqcircuits.chips.junction_bridge_test_chip import JunctionBridgeTestChip
 from kqcircuits.chips.blank_chip import BlankChip
 from kqcircuits.masks.mask_set import MaskSet
 from kqcircuits.masks.mask_export import get_mask_layout_full_name
 from kqcircuits.elements.alignment_markers import AlignmentMarkers
+from kqcircuits.elements.alignment_pomeroy_global import AlignmentPomeroyGlobal
 from kqcircuits.defaults import TMP_PATH, default_faces
 from kqcircuits.util.library_helper import load_libraries
 from kqcircuits.util.load_save_layout import save_layout, load_layout
@@ -38,12 +40,13 @@ load_libraries(path="test_structures")
 
 if __name__ == "__main__":
     mdemo = MaskSet(
-        name="FinMET1",
+        name="JunctionTest1",
         version=6,
         with_grid=False,
-        mask_export_layers=["base_metal_gap_wo_grid", "SIS_shadow", "SIS_junction_2", "chip_dicing"],
+        mask_export_layers=["base_metal_gap_wo_grid", "SIS_junction",  "SIS_shadow", "chip_dicing"],
         export_path=TMP_PATH,
-        name_date="260807",  # <-- date/version label on every chip; update each run
+        name_date="260805",  # <-- date/version label on every chip; update each run
+        #chip_copy_label_layers=["base_metal_gap", "base_metal_gap_wo_grid", "base_metal_gap_for_EBL", "SIS_junction"],
     )
 
     layers_to_mask = {"base_metal_gap_wo_grid": "1"}
@@ -70,15 +73,14 @@ if __name__ == "__main__":
     """# Bottom face (1t1) mask
     mdemo.add_mask_layout(
         [
-                    ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
-            
+            ["---", "---",   "FLER",  "FMET",  "FLER",  "FMETR", "FLER",   "---",  "---"],
+            ["---", "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "FMET",  "---"],
+            ["---", "FLER",  "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "---"],
+            ["---", "FMETR", "FLER",  "FMET",  "FLER",  "FMETR", "FLER",  "FMET",  "---"],
+            ["---", "FLER",  "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "---"],
+            ["---", "FMETR", "FLER",  "FMET",  "FLER",  "FMETR", "FLER",  "FMET",  "---"],
+            ["---", "FLER",  "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "---"],
+            ["---", "---",   "FLER", "FMETR",  "FMET",  "FLER",  "FMETR",   "---",  "---"],
         ],
         "1t1",
         layers_to_mask=layers_to_mask,
@@ -93,16 +95,26 @@ if __name__ == "__main__":
     )"""
 
     # Bottom face (1t1) mask
+    """[
+            ["---", "--",   "BK",   "BK",   "BK",   "BK",   "BK",   "--",  "---"],
+            ["---", "BK",   "JB",   "BK",   "BK",   "BK",   "JB",   "BK",  "---"],
+            ["---", "BK",   "BK",   "BK",   "BK",   "BK",   "BK",   "BK",  "---"],
+            ["---", "BK",   "JB",   "BK",   "BK",   "BK",   "JB",   "BK",  "---"],
+            ["---", "BK",   "BK",   "BK",   "BK",   "BK",   "BK",   "BK",  "---"],
+            #["---", "BK",   "BK",   "BK",   "BK",   "BK",   "BK",   "BK",  "---"],
+            ["---", "BK",   "JB",   "BK",   "BK",   "BK",   "JB",   "BK",  "---"],
+            ["---", "--",   "BK",   "BK",   "BK",   "BK",   "BK",   "--",  "---"],
+        ],"""
     mdemo.add_mask_layout(
-        [
-            ["---", "---",   "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---",   "---"],
-            ["---", "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "---"],
-            ["---", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---"],
-            ["---", "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "---"],
-            ["---", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---"],
-            ["---", "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "---"],
-            ["---", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---"],
-            ["---", "---",   "FLER",  "FMETR", "FMETR", "FLER",  "FMETR", "---",   "---"],
+            [
+            ["---", "--",   "JH",   "JB",   "BK",   "JH",   "JB",   "--",  "---"],
+            ["---", "BK",   "JB",   "JR",   "BK",   "JB",   "JR",   "BK",  "---"],
+            ["---", "BK",   "BK",   "BK",   "BK",   "BK",   "BK",   "BK",  "---"],
+            ["---", "BK",   "JH",   "JB",   "BK",   "JH",   "JB",   "BK",  "---"],
+            ["---", "BK",   "JB",   "JR",   "BK",   "JB",   "JR",   "BK",  "---"],
+            ["---", "BK",   "BK",   "BK",   "BK",   "BK",   "BK",   "BK",  "---"],
+            ["---", "BK",   "JH",   "JB",   "BK",   "JH",   "JB",   "BK",  "---"],
+            ["---", "--",   "JB",   "JR",   "BK",   "JB",   "JR",   "--",  "---"],
         ],
         "1t1",
         layers_to_mask=layers_to_mask,
@@ -120,10 +132,10 @@ if __name__ == "__main__":
     # chip definitions
     mdemo.add_chip(
         [
-            (FinMetChip, "FMET", {"enable_resistance_probe": False}),
-            (FinMetChip, "FMETR", {"enable_resistance_probe": True}),  # variant without resistance probe structures
-            (FinRfSquidChip, "FLER"),
-            #(QualityFactor, "BR1", {"n_ab": [1, 2, 3, 4, 5, 6]}),
+            (BlankChip, "BK"),
+            (JunctionHookTestChip, "JH", {"label_sis_junction": True, "label_text": "260805"}),
+            (JunctionBridgeTestChip, "JB", {"label_sis_junction": True, "label_text": "260805"}),
+            (JunctionBridgeTestChip, "JR", {"label_sis_junction": True, "label_text": "260805", "rotate_junctions_180": True}),
         ]
     )
 
@@ -136,41 +148,3 @@ if __name__ == "__main__":
     mdemo.build()
     mdemo.export()
 
-    # Overlay an external GDS onto the fab_layers output.
-    # Layer EXTERNAL_MERGE_LAYER from the external file is merged (boolean OR) into base_metal_gap_wo_grid.
-    # All other layers in the external file are appended as-is.
-    #EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260321_FinMET_LERes_Transmon_V3_Teun_rotated.gds")  # <-- set this path
-    #EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260514_LERes_Angle_V1_Teun_rotated.gds")  # <-- set this path
-    EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260718_FinMET_LERes_Transmon_75to150nm_3nmstep_v2_rotated.gds")  # <-- set this path 
-    EXTERNAL_MERGE_LAYER = pya.LayerInfo(26, 0)       # layer/datatype to merge into base_metal_gap_wo_grid
-
-    ext_layout = pya.Layout()
-    ext_layout.read(str(EXTERNAL_GDS))
-    ext_top = ext_layout.top_cells()[0]
-
-    for mask_layout in mdemo.mask_layouts:
-        if mask_layout.face_id != "1t1":
-            continue
-        full_name = get_mask_layout_full_name(mdemo, mask_layout)
-        fab_path = mdemo._mask_set_dir / full_name / f"{full_name}-fab_layers.oas"
-
-        fab_layout = pya.Layout()
-        load_layout(fab_path, fab_layout)
-        fab_top = fab_layout.top_cells()[0]
-
-        # Merge external layer 26 into base_metal_gap_wo_grid
-        bmg_layer = fab_layout.layer(default_faces["1t1"]["base_metal_gap_wo_grid"])
-        ext_merge_idx = ext_layout.find_layer(EXTERNAL_MERGE_LAYER)
-        if ext_merge_idx >= 0:
-            fab_top.shapes(bmg_layer).insert(pya.Region(ext_top.begin_shapes_rec(ext_merge_idx)))
-
-        # Append all other external layers as separate layers
-        for li in ext_layout.layer_infos():
-            if li.layer == EXTERNAL_MERGE_LAYER.layer and li.datatype == EXTERNAL_MERGE_LAYER.datatype:
-                continue
-            ext_idx = ext_layout.layer(li)
-            region = pya.Region(ext_top.begin_shapes_rec(ext_idx))
-            if not region.is_empty():
-                fab_top.shapes(fab_layout.layer(li)).insert(region)
-
-        save_layout(fab_path, fab_layout, cells=[fab_top])

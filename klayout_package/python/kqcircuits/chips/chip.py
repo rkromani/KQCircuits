@@ -69,6 +69,8 @@ class Chip(Element):
     LIBRARY_DESCRIPTION = "Superconducting quantum circuit library for chips."
     LIBRARY_PATH = "chips"
 
+    include_copy_label = True  # set to False on chip classes that should not receive copy labels in mask layouts
+
     with_grid = Param(pdt.TypeBoolean, "Make ground plane grid", False)
     gnd_grid_faces = Param(
         pdt.TypeList, "Faces on which the grid is generated, [-1] is all, [] is None", [-1], hidden=True

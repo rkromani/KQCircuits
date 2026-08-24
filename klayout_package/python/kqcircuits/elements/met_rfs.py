@@ -25,6 +25,7 @@ from kqcircuits.util.parameters import Param, pdt, add_parameters_from
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.coupled_inductor import CoupledInductor
 from kqcircuits.elements.pomeroy_cap import PomeroyCap
+from kqcircuits.junctions.rkr_bridge_junction_2 import RKRBridge2
 from kqcircuits.util.refpoints import RefpointToInternalPort
 
 import numpy as np
@@ -32,10 +33,10 @@ import math
 
 
 @add_parameters_from(WaveguideCoplanar, "add_metal")
-class PomeroyRes(Element):
+class MetRfs(Element):
 
-    l_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout", 600, unit="μm")
-    l_ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout", 1000, unit="μm")
+    l_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout", 1300, unit="μm")
+    l_ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout", 1500, unit="μm")
     l_ground_radius = Param(pdt.TypeDouble, "Radius of ground cutout corners", 10, unit="μm")
 
     feedline_length = Param(pdt.TypeDouble, "Feedline length", 1600, unit="μm")
@@ -44,35 +45,32 @@ class PomeroyRes(Element):
     feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
     feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", False)
 
-    l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 5000, unit="μm")
-    l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 100, unit="μm")
-    l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and ground in coupling region", 20, unit="μm")
+    l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 6000, unit="μm")
+    l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 200, unit="μm")
+    l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and ground in coupling region", 40, unit="μm")
     l_width = Param(pdt.TypeDouble, "Inductor width", 4, unit="μm")
     l_radius = Param(pdt.TypeDouble, "Radius of inductor bends", 25, unit="μm")
-    l_ground_sep = Param(pdt.TypeDouble, "Separation between inductor and ground cutout", 100, unit="μm")
-    l_middle_sep = Param(pdt.TypeDouble, "Separation between one side and the other of the inductor", 100, unit="μm")
-    l_connection_spacing = Param(pdt.TypeDouble, "Spacing between inductors two connections", 200, unit="μm")
+    l_ground_sep = Param(pdt.TypeDouble, "Separation between inductor and ground cutout", 300, unit="μm")
+    l_middle_sep = Param(pdt.TypeDouble, "Separation between one side and the other of the inductor", 300, unit="μm")
+    l_connection_spacing = Param(pdt.TypeDouble, "Spacing between inductors two connections", 400, unit="μm")\
+
+    met_bridge_width = Param(pdt.TypeDouble, "Width/thickness of the MET bridge", 0.15, unit="μm")
+    met_bridge_length = Param(pdt.TypeDouble, "Length of the MET bridge", 4, unit="μm")
+    met_length = Param(pdt.TypeDouble, "Length of the MET (pad to pad)", 12, unit="μm")
+    met_pad_width = Param(pdt.TypeDouble, "Width of the MET pads", 15, unit="μm")
+    met_pad_height = Param(pdt.TypeDouble, "Height of the MET pads", 10, unit="μm")
+    met_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout for MET", 40, unit="μm")
+    met_ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout for MET", 50, unit="μm")
+    met_ground_radius = Param(pdt.TypeDouble, "Radius of ground cutout corners for MET", 5, unit="μm")
 
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", True)
+    enable_rlc = Param(pdt.TypeBoolean, "Whether to add RLC elements for modeling", True)
     enable_feedline_termination = Param(pdt.TypeBoolean, "Whether to terminate the feedline with RLC sim elements", False)
     sim_gap = Param(pdt.TypeBoolean, "Gap for ACRL simulation", False)
 
-    c_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout", 100, unit="μm")
-    c_ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout", 100, unit="μm")
-    c_ground_radius = Param(pdt.TypeDouble, "Radius of ground cutout corners", 5, unit="μm")
-
-    cap_width = Param(pdt.TypeDouble, "Width of capacitor body", 2, unit="μm")
-    cap_height = Param(pdt.TypeDouble, "Height of capacitor body", 2, unit="μm")
-
-    lead_length = Param(pdt.TypeDouble, "Length of capacitor leads defined in e beam", 15, unit="μm")
-    lead_width = Param(pdt.TypeDouble, "Width of capacitor leads defined in e beam", 0.1, unit="μm")
-
-    connection_leg_length = Param(pdt.TypeDouble, "Length of legs on the wiring layer in the connection region", 5, unit="μm")
-    connection_leg_width = Param(pdt.TypeDouble, "Width of legs on the wiring layer in the connection region", 4, unit="μm")
-    connection_leg_offset = Param(pdt.TypeDouble, "Offset between the connection regions in the e beam and wiring layer, wiring layer is thinner", 1, unit="μm")
-    connection_leadin_length = Param(pdt.TypeDouble, "Length of leadin wires on the wiring layer from ground gap to connection region", 20, unit="μm")
-
-    include_ebeam = Param(pdt.TypeBoolean, "Whether to include the e beam capacitor definition layer", True)
+    rlc_junction_c = Param(pdt.TypeDouble, "Junction capacitance for RLC model", 10, unit="fF")
+    rlc_junction_l = Param(pdt.TypeDouble, "Junction inductance for RLC model", 10, unit="nH")
+    rlc_junction_r = Param(pdt.TypeDouble, "Junction parallel resistance (0=lossless; Q_int=R/omega0/L)", 0, unit="Ohm")
 
     extra_cap_spacing = Param(pdt.TypeDouble, "Spacing between ground gap and extra capacitor", 5, unit="μm")
     extra_cap_height = Param(pdt.TypeDouble, "Height of extra capacitor pad", 80, unit="μm")
@@ -100,29 +98,32 @@ class PomeroyRes(Element):
 
         self.l_ground_bottom = -self.l_ground_cutout_height -self.a/2 -self.b -self.feedline_coupling_ground_spacing
 
-        self.insert_cell(PomeroyCap, pya.DCplxTrans(1, 180, False, self.l_connection_spacing/2,
-                                                     self.l_ground_bottom-self.connection_leg_length-self.lead_length - self.extra_cap_height), "main_cap",
-                         ground_cutout_height=self.c_ground_cutout_height,
-                         ground_cutout_width=self.c_ground_cutout_width,
-                         cap_width=self.cap_width,
-                         cap_height=self.cap_height,
-                         lead_length=self.lead_length,
-                         lead_width=self.lead_width,
-                         connection_leg_length=self.connection_leg_length,
-                         connection_leg_width=self.connection_leg_width,
-                         connection_leg_offset=self.connection_leg_offset,
-                         connection_leadin_length=self.connection_leadin_length,
-                         include_ebeam=self.include_ebeam, 
-                         enable_mesh_layers=self.enable_mesh_layers,
-                         enable_feedline_termination=self.enable_feedline_termination,
-                         n=self.n)
+        met_center_x = self.l_connection_spacing/2 + self.met_length/2
+        met_center_y = self.l_ground_bottom - self.extra_cap_height - self.met_ground_cutout_height/2
+        coord = pya.DTrans(1, False, met_center_x, met_center_y)
+        palm_width = 7
+        taper_width = 10
+        if not self.enable_rlc: 
+            self.insert_cell(
+                RKRBridge2, coord, f"JJ", 
+                wiring_pad_bool=False,
+                pad_height=self.met_pad_height, pad_width=self.met_pad_width, 
+                pad_offset = self.met_length/2, 
+                palm_width=palm_width, taper_base=taper_width, 
+                bridge_length=self.met_bridge_length,
+                bridge_width=self.met_bridge_width, 
+                #pad_offset = self.cap_gap/2 + 1, 
+                #taper_height = self.cap_gap/2, 
+                taper_width = taper_width,
+                #**element_params[i],
+            )
 
-        self.cap_ground_gap_left = self.l_connection_spacing/2 - self.c_ground_cutout_width + self.lead_length + self.connection_leadin_length
-        self.cap_ground_gap_right = self.l_connection_spacing/2 + self.lead_length + self.connection_leadin_length
+        self.cap_ground_gap_left = self.l_connection_spacing/2 - self.met_ground_cutout_width + self.met_length
+        self.cap_ground_gap_right = self.l_connection_spacing/2 + self.met_length
         pts_add_gap = [
             pya.DPoint(self.cap_ground_gap_left, self.l_ground_bottom),
-            pya.DPoint(self.cap_ground_gap_left, self.l_ground_bottom - self.extra_cap_height),
-            pya.DPoint(self.cap_ground_gap_right, self.l_ground_bottom - self.extra_cap_height),
+            pya.DPoint(self.cap_ground_gap_left, self.l_ground_bottom - self.extra_cap_height - self.met_ground_cutout_height),
+            pya.DPoint(self.cap_ground_gap_right, self.l_ground_bottom - self.extra_cap_height - self.met_ground_cutout_height),
             pya.DPoint(self.cap_ground_gap_right, self.l_ground_bottom),
         ]
         extra_gap_region = pya.DPolygon(pts_add_gap)
@@ -137,17 +138,40 @@ class PomeroyRes(Element):
         extra_cap_region = pya.DPolygon(pts_add_cap)
         extra_cap_region = pya.Region(extra_cap_region.to_itype(self.layout.dbu))
 
+        met_wire_pts = [
+            pya.DPoint(met_center_x - self.met_pad_height - self.met_length/2, self.l_ground_bottom - self.extra_cap_height),
+            pya.DPoint(met_center_x - self.met_pad_height - self.met_length/2, met_center_y - self.met_pad_width/2),
+            pya.DPoint(met_center_x - self.met_length/2, met_center_y - self.met_pad_width/2),
+            pya.DPoint(met_center_x - self.met_length/2, self.l_ground_bottom - self.extra_cap_height),
+        ]
+        met_wire_region = pya.DPolygon(met_wire_pts)
+        met_wire_region = pya.Region(met_wire_region.to_itype(self.layout.dbu))
+
         self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
-            extra_gap_region - extra_cap_region
+            extra_gap_region - extra_cap_region - met_wire_region
         )
 
-        """self.cell.shapes(self.get_layer("SIS_junction")).insert(
-            
-        )"""
+        rlc_junction_pts = [
+            pya.DPoint(met_center_x - self.met_length, met_center_y - self.met_pad_width/2),
+            pya.DPoint(met_center_x - self.met_length, met_center_y + self.met_pad_width/2),
+            pya.DPoint(met_center_x + self.met_length, met_center_y + self.met_pad_width/2),
+            pya.DPoint(met_center_x + self.met_length, met_center_y - self.met_pad_width/2),
+        ]
 
+        if self.enable_rlc:
+            rlc_junction_region = pya.Region(pya.DPolygon(rlc_junction_pts).to_itype(self.layout.dbu))
+        else:
+            rlc_junction_region = pya.Region()
+
+        self.cell.shapes(self.get_layer("lumped_rlc")).insert(
+            rlc_junction_region
+        )
 
         self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))
         self.add_port("feedline_b", pya.DPoint(self.feedline_length/2, 0), pya.DVector(1, 0))
         self.refpoints["feedline_a"] = pya.DPoint(-self.feedline_length/2, 0)
         self.refpoints["feedline_b"] = pya.DPoint(self.feedline_length/2, 0)
+        
+        self.refpoints["rlc_junction_signal"] = pya.DPoint(met_center_x - self.met_length, met_center_y)
+        self.refpoints["rlc_junction_ground"] = pya.DPoint(met_center_x + self.met_length, met_center_y)
 

@@ -38,6 +38,7 @@ class RKRHook(Junction):
     finger_length = Param(pdt.TypeDouble, "Length of junction finger", 5, unit="μm")
     finger_tip_length = Param(pdt.TypeDouble, "Length of junction finger tip", 1, unit="μm")
     finger_width = Param(pdt.TypeDouble, "Width of junction finger a.k.a. bridge length", 0.1, unit="μm")
+    hook_width = Param(pdt.TypeDouble, "Width of junction hook", 0.1, unit="μm")
     finger_taper_base_width = Param(pdt.TypeDouble, "Width of junction finger taper at base", 5, unit="μm")
     finger_spacing = Param(pdt.TypeDouble, "Spacing between junction fingers", 1, unit="μm")
     overshoot = Param(pdt.TypeDouble, "Amount the hook extends beyond the finger width and finger beyond hook", 0.5, unit="μm")
@@ -107,8 +108,8 @@ class RKRHook(Junction):
                 pya.DPoint(self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length),
                 pya.DPoint(self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
                 pya.DPoint(self.finger_width / 2 + x_offset + self.overshoot, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
-                pya.DPoint(self.finger_width / 2 + x_offset + self.overshoot, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length - self.finger_width),
-                pya.DPoint(- self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length - self.finger_width),
+                pya.DPoint(self.finger_width / 2 + x_offset + self.overshoot, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length - self.hook_width),
+                pya.DPoint(- self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length - self.hook_width),
                 pya.DPoint(- self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length - self.finger_tip_length),
                 pya.DPoint(- self.finger_width / 2 - x_offset, self.total_junction_height - self.pad_height - self.finger_length),
                 pya.DPoint(- self.finger_taper_base_width / 2 - x_offset, self.total_junction_height - self.pad_height),

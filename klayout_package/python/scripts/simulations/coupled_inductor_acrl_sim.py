@@ -108,11 +108,14 @@ layout = get_active_or_new_layout()
 import json
 sweep_params = {
     # Example sweeps - uncomment as needed
-    "l_tot_length": [4000, 5000, 6000],
-    # "l_coupling_distance": [24, 32, 40],
-    # "l_width": [3, 4, 5],
-    'ground_cutout_width': [1000],
-    'ground_cutout_height': [600], 
+    "l_tot_length": [5000, 6000, 7000],
+    "l_coupling_distance": [20],
+    "l_width": [4],
+    "l_ground_sep": [300],
+    "l_middle_sep": [300], 
+    "l_connection_spacing": [400],
+    'ground_cutout_width': [1500],
+    'ground_cutout_height': [1200], 
 
 }
 

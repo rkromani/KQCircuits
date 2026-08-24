@@ -52,6 +52,8 @@ class ChipFrame(Element):
     name_copy = Param(pdt.TypeString, "Name of the copy", None)
     name_brand = Param(pdt.TypeString, "Name of the brand", default_brand)
     name_date = Param(pdt.TypeString, "Date/version label below mask name (upper-left corner)", "")
+    name_date_x_offset = Param(pdt.TypeDouble, "X offset of date label from left edge", 0, unit="um")
+    label_sis_junction = Param(pdt.TypeBoolean, "Also write frame labels to SIS_junction layer", False)
     text_margin = Param(
         pdt.TypeDouble, "Margin for labels", 100, docstring="Margin of the ground grid avoidance layer around the text"
     )
@@ -102,7 +104,7 @@ class ChipFrame(Element):
             label_size = 350 * min(1, self.box.width() / 7000, self.box.height() / 7000)
             self._produce_label(
                 self.name_date,
-                pya.DPoint(x_min, mask_label_bbox.p1.y + self.text_margin),
+                pya.DPoint(x_min + self.name_date_x_offset, mask_label_bbox.p1.y + self.text_margin),
                 LabelOrigin.TOPLEFT,
                 size=label_size * 0.6,
             )
@@ -153,7 +155,8 @@ class ChipFrame(Element):
             origin,
             self.dice_width,
             margin,
-            [self.face()["base_metal_gap_wo_grid"], self.face()["base_metal_gap_for_EBL"]],
+            [self.face()["base_metal_gap_wo_grid"], self.face()["base_metal_gap_for_EBL"]]
+            + ([self.face()["SIS_junction"]] if self.label_sis_junction else []),
             self.face()["ground_grid_avoidance"],
             size,
         )

@@ -26,6 +26,7 @@ from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
 from kqcircuits.elements.pomeroy_double_res import PomeroyDoubleRes
+from kqcircuits.elements.alignment_pomeroy_local import AlignmentPomeroyLocal
 from kqcircuits.elements.finger_capacitor_ground_v3 import FingerCapacitorGroundV3
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
@@ -44,6 +45,7 @@ import numpy as np
     box=pya.DBox(pya.DPoint(0, 0), pya.DPoint(7500, 7500)),
     chip_dicing_width=50,
     chip_dicing_in_base_metal=True,
+    name_date_x_offset=1200,
 )
 @add_parameters_from(
     Chip,
@@ -77,6 +79,8 @@ class PomeroyDoubleResChip(Chip):
     cap_distance = Param(pdt.TypeDouble, "Capacitor distance from bottom of resonator ground gap", 50, unit="μm")
     launcher_turn_x = Param(pdt.TypeDouble, "Distance from tip of bias launcher to turn", 300, unit="μm")
     bias_rail_y = Param(pdt.TypeDouble, "Y position of bias rail", 300, unit="μm")
+
+    alignment_pomeroy_local_pos = Param(pdt.TypeDouble, "Distance of alignment mark from center of chip", 3250, unit="μm")
     
 
     # parameters to pass to junctions
@@ -191,6 +195,24 @@ class PomeroyDoubleResChip(Chip):
 
 
 
+        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
+                                                  3750,
+                                                  self.alignment_pomeroy_local_pos + 3750),
+                                                  "alignment_local")
+        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
+                                                  3750,
+                                                  -self.alignment_pomeroy_local_pos + 3750),
+                                                  "alignment_local")
+        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
+                                                  self.alignment_pomeroy_local_pos + 3750,
+                                                  3750),
+                                                  "alignment_local")
+        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
+                                                  -self.alignment_pomeroy_local_pos + 3750,
+                                                  3750),
+                                                  "alignment_local")
+
+
 
 
         DR_coords = []
@@ -201,7 +223,7 @@ class PomeroyDoubleResChip(Chip):
         n_res = 2
 
         res_params = [{"cap_width": 2, "cap_height": 2},
-                      {"cap_width": 1.5, "cap_height": 1.5}, ]
+                      {"cap_width": 3, "cap_height": 3}, ]
 
 
 
@@ -219,14 +241,14 @@ class PomeroyDoubleResChip(Chip):
                 **res_params[i], 
             ) 
 
-            offset_x = -400
+            offset_x = -300
             if i < n_res/2:
-                offset_y = -120
+                offset_y = -400
             else:
-                offset_y = 120
+                offset_y = 400
             produce_label(
                 self.cell,
-                label="cap_dim " + str(res_params[i]["cap_width"]),
+                label="cap_dim " + str(res_params[i]["cap_width"]) + " x " + str(res_params[i]["cap_height"]),
                 location=pya.DPoint(center_x - (i - (n_res-1)/2)*spacing + offset_x, center_y + offset_y),
                 origin=LabelOrigin.TOPLEFT,
                 origin_offset=0,
@@ -302,7 +324,7 @@ class PomeroyDoubleResChip(Chip):
             if i != cap_to_skip:
                 self.insert_cell(
                     FingerCapacitorGroundV3, pya.DTrans(rot, False, cap_center_x, cap_center_y), f"CAP{i}",
-                    a=self.a, b=self.b,
+                    a=self.a, b=self.b, finger_number=0, 
                 )
 
                 self.insert_cell(

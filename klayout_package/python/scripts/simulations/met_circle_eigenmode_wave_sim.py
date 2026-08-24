@@ -13,12 +13,14 @@
 # https://www.gnu.org/licenses/gpl-3.0.html.
 
 
-"""Eigenmode + Wave S21 Simulation for Pomeroy Resonator
+"""Eigenmode + Wave S21 Simulation for MetCircle
 
-The Pomeroy resonator has a Manhattan-type capacitor drawn on the SIS_junction
-layer. In simulation we do NOT treat this as metal. Instead, the lumped_rlc
-layer from PomeroyCap provides a surface that ANSYS attaches a lumped capacitor
-boundary to, with capacitance set via the cap_capacitance parameter below.
+Eigenmode: RLC lumped element for the MET junction (parallel L+C) replaces
+the physical bridge geometry. The lumped element port defines the resonator
+circuit topology without needing a separate net assignment port.
+
+Wave: Feedline edge ports (1, 2) for S21 measurement plus the same lumped
+RLC port (3) for MET.
 """
 
 import argparse
@@ -44,28 +46,24 @@ from kqcircuits.defaults import ANSYS_EXECUTABLE
 sys.path.insert(0, str(Path(__file__).parents[4]))
 from simulations_database.tools.simulation_db import SimulationDB
 
-from kqcircuits.elements.pomeroy_res import PomeroyRes
+from kqcircuits.elements.met_circle import MetCircle
 from kqcircuits.simulations.port import InternalPort
 from kqcircuits.simulations.single_element_simulation import get_single_element_sim_class
-from kqcircuits.util.parameters import Param, pdt
 
 
 # ===========================
 # Simulation Classes
 # ===========================
 
-BaseSimClass = get_single_element_sim_class(PomeroyRes)
+BaseSimClass = get_single_element_sim_class(MetCircle)
 
 
-class PomeroyResEigenmodeSim(BaseSimClass):
-    """HFSS eigenmode simulation for Pomeroy Resonator.
+class MetCircleEigenmodeSim(BaseSimClass):
+    """HFSS eigenmode simulation for MetCircle.
 
-    SIS_junction layer is excluded from metal (use_sis_junction_stack=False,
-    the default). The Manhattan capacitor is modeled as a lumped capacitor
-    boundary attached to the lumped_rlc layer from PomeroyCap.
+    MET junction modeled as a lumped parallel L+C boundary on the lumped_rlc layer.
+    No feedline ports needed for eigenmode.
     """
-
-    cap_capacitance = Param(pdt.TypeDouble, "Lumped capacitance of Manhattan capacitor", 10e-15, unit="F")
 
     def build(self):
         super().build()
@@ -73,82 +71,70 @@ class PomeroyResEigenmodeSim(BaseSimClass):
         # Remove any auto-generated ports; eigenmode does not need feedline ports.
         self.ports = []
 
-        # Add lumped capacitor boundary using refpoints from PomeroyCap.
-        # PomeroyCap is inserted as "main_cap" in PomeroyRes, so its refpoints
-        # are prefixed with "main_cap_". Always use refpoints, never recalculate
-        # geometry coordinates (see memory: coordinate system mismatch lesson).
-        signal_loc = self.refpoints["main_cap_cap_signal"]
-        ground_loc = self.refpoints["main_cap_cap_ground"]
-
-        self.ports.append(
-            InternalPort(
-                number=1,
-                signal_location=signal_loc,
-                ground_location=ground_loc,
-                resistance=1e9,
-                capacitance=self.cap_capacitance,
-                lumped_element=True,
-            )
-        )
+        # Lumped MET: parallel inductor and capacitor.
+        # Always use refpoints, never recalculate geometry coordinates.
+        self.ports.append(InternalPort(
+            number=1,
+            signal_location=self.refpoints["rlc_met_signal"],
+            ground_location=self.refpoints["rlc_met_ground"],
+            capacitance=self.rlc_met_c * 1e-15,
+            inductance=self.rlc_met_l * 1e-9,
+            resistance=0,
+            lumped_element=True,
+            rlc_type="parallel",
+        ))
 
 
-class PomeroyResWaveSim(BaseSimClass):
-    """HFSS wave simulation for Pomeroy Resonator S-parameter measurement.
+class MetCircleWaveSim(BaseSimClass):
+    """HFSS wave simulation for MetCircle S-parameter measurement.
 
-    SIS_junction layer is excluded from metal (use_sis_junction_stack=False,
-    the default). The Manhattan capacitor is modeled as a lumped capacitor
-    boundary. Edge ports are added at the two feedline ends.
+    Feedline edge ports (1, 2) for S21, plus lumped RLC port (3) for MET.
     """
-
-    cap_capacitance = Param(pdt.TypeDouble, "Lumped capacitance of Manhattan capacitor", 10e-15, unit="F")
 
     def build(self):
         super().build()
 
-        # Clear any auto-generated ports before adding our own.
+        # Remove any auto-generated ports before adding our own.
         self.ports = []
 
-        # Feedline edge ports: waveguide extensions out to the box edges.
-        # feedline_a exits to the left (-x), feedline_b to the right (+x).
+        # Feedline edge ports: waveguide stubs extend outward to the box edges.
+        # feedline_a exits to the left (-x), feedline_b exits to the right (+x).
         feedline_a = self.refpoints["feedline_a"]
         feedline_b = self.refpoints["feedline_b"]
 
         self.produce_waveguide_to_port(
             feedline_a,
-            feedline_a + pya.DVector(-100, 0),  # direction: left
+            feedline_a + pya.DVector(-100, 0),  # direction: outward (left)
             port_nr=1,
             side="left",
             use_internal_ports=False,
         )
         self.produce_waveguide_to_port(
             feedline_b,
-            feedline_b + pya.DVector(100, 0),   # direction: right
+            feedline_b + pya.DVector(100, 0),   # direction: outward (right)
             port_nr=2,
             side="right",
             use_internal_ports=False,
         )
 
-        # Lumped capacitor boundary at the Manhattan capacitor location.
-        signal_loc = self.refpoints["main_cap_cap_signal"]
-        ground_loc = self.refpoints["main_cap_cap_ground"]
-
-        self.ports.append(
-            InternalPort(
-                number=3,
-                signal_location=signal_loc,
-                ground_location=ground_loc,
-                resistance=1e9,
-                capacitance=self.cap_capacitance,
-                lumped_element=True,
-            )
-        )
+        # Lumped MET: parallel L+C boundary.
+        self.ports.append(InternalPort(
+            number=3,
+            signal_location=self.refpoints["rlc_met_signal"],
+            ground_location=self.refpoints["rlc_met_ground"],
+            capacitance=self.rlc_met_c * 1e-15,
+            inductance=self.rlc_met_l * 1e-9,
+            resistance=0,
+            lumped_element=True,
+            rlc_type="parallel",
+        ))
 
 
 # ===========================
 # Command-line arguments
 # ===========================
 
-parser = argparse.ArgumentParser(description="Pomeroy Resonator eigenmode + wave simulation")
+parser = argparse.ArgumentParser(description="MetCircle eigenmode + wave simulation workflow")
 parser.add_argument("--no-gui", action="store_true", help="Don't open KLayout to view results")
 parser.add_argument("--eigenmode-only", action="store_true",
                     help="Only run eigenmode simulations, skip wave/S21 simulations")
@@ -171,32 +157,30 @@ layout = get_active_or_new_layout()
 # Simulation Parameters
 # ===========================
 
-# Capacitance of the Manhattan capacitor in Farads.
-# Adjust this to match the expected capacitance from fabrication/Q3D extraction.
-CAP_CAPACITANCE = 10e-15  # 10 fF default (used when not sweeping)
-
 shared_params = {
     "face_stack": ["1t1"],
     "a": 10,
     "b": 6,
-    "n": 24,
-    "enable_mesh_layers": True,
+    "n": 64,
+    "enable_rlc": True,
     "feedline_cutout_bool": False,
+    # RLC values (adjust to match device)
+    "rlc_met_c": 60,   # fF
+    "rlc_met_l": 16.5,   # nH
 }
 
 eigenmode_sim_parameters = {
-    "name": "pomeroy_res_eigenmode",
+    "name": "met_circle_eigenmode",
     "use_internal_ports": True,
     "use_ports": True,
-    "box": pya.DBox(pya.DPoint(-1000, -1500), pya.DPoint(1000, 200)),
-    "cap_capacitance": CAP_CAPACITANCE,
+    "box": pya.DBox(pya.DPoint(-1000, -1700), pya.DPoint(1000, 300)),
     **shared_params,
 }
 
 eigenmode_solution_parameters = {
     "ansys_tool": "eigenmode",
-    "n_modes": 1,
-    "min_frequency": 1,
+    "n_modes": 3,
+    "min_frequency": 5,
     "max_delta_f": 1,
     "maximum_passes": 20,
     "minimum_converged_passes": 2,
@@ -212,20 +196,20 @@ eigenmode_export_parameters = {
 }
 
 wave_sim_parameters = {
-    "name": "pomeroy_res_wave",
+    "name": "met_circle_wave",
     "use_internal_ports": False,
     "use_ports": True,
-    "box": pya.DBox(pya.DPoint(-1500, -1500), pya.DPoint(1500, 200)),
-    "cap_capacitance": CAP_CAPACITANCE,  # overridden per-sim when sweeping
+    "box": pya.DBox(pya.DPoint(-1500, -1700), pya.DPoint(1500, 300)),
+    "port_size": 100,
     **shared_params,
 }
 
 wave_solution_parameters = {
     "ansys_tool": "hfss",
-    "frequency": 5,
+    "frequency": 6,
     "max_delta_s": 0.01,
-    "sweep_start": 4.5,
-    "sweep_end": 5.5,
+    "sweep_start": 5.5,   # placeholder - updated by eigenmode result
+    "sweep_end": 6.5,     # placeholder - updated by eigenmode result
     "sweep_count": 5001,
     "sweep_type": "interpolating",
     "maximum_passes": 10,
@@ -246,13 +230,10 @@ wave_export_parameters = {
 # ===========================
 
 sweep_params = {
-    # To sweep capacitance, put the list here (not in CAP_CAPACITANCE above).
-    # cross_sweep_simulation creates one sim per value in this list.
-    "cap_capacitance": [1e-18, 22e-15, 44e-15, 88e-15, 176e-15],
-    "extra_cap_height": [0, 80]
-
-    # Example: sweep inductor total length
-    # "l_tot_length": [4000, 5000, 6000],
+    # Example: sweep MET inductance to study frequency tuning
+    # "rlc_met_l": [6.0, 8.1, 10.0],
+    # Example: sweep resonator length
+    # "res_length": [3800, 3950, 4200],
 }
 
 # ===========================
@@ -260,23 +241,22 @@ sweep_params = {
 # ===========================
 
 print("\n" + "="*70)
-print("Pomeroy Resonator Eigenmode + Wave Simulation Workflow")
+print("MetCircle Eigenmode + Wave Simulation Workflow")
 print("="*70)
 print(f"Mode: {'eigenmode only' if args.eigenmode_only else args.eigenmode_mode}")
-print(f"Cap capacitance: {CAP_CAPACITANCE*1e15:.1f} fF")
 if not args.eigenmode_only:
     print(f"Sweep width: +/- {args.sweep_width/2} GHz around eigenfrequency")
 print("="*70 + "\n")
 
 if args.eigenmode_only or args.eigenmode_mode == "each":
-    eigenmode_sims = cross_sweep_simulation(layout, PomeroyResEigenmodeSim, eigenmode_sim_parameters, sweep_params)
+    eigenmode_sims = cross_sweep_simulation(layout, MetCircleEigenmodeSim, eigenmode_sim_parameters, sweep_params)
     print(f"Creating {len(eigenmode_sims)} eigenmode simulations")
 elif args.eigenmode_mode == "shared":
-    eigenmode_sims = cross_sweep_simulation(layout, PomeroyResEigenmodeSim, eigenmode_sim_parameters, {})
+    eigenmode_sims = cross_sweep_simulation(layout, MetCircleEigenmodeSim, eigenmode_sim_parameters, {})
     print(f"Creating 1 shared eigenmode simulation (used for all sweep points)")
 
 if not args.eigenmode_only:
-    wave_sims = cross_sweep_simulation(layout, PomeroyResWaveSim, wave_sim_parameters, sweep_params)
+    wave_sims = cross_sweep_simulation(layout, MetCircleWaveSim, wave_sim_parameters, sweep_params)
     print(f"Creating {len(wave_sims)} wave simulations")
 else:
     wave_sims = []
@@ -294,7 +274,7 @@ if not args.eigenmode_only:
 
 db_folders = db.register_simulations(
     simulations=eigenmode_sims + wave_sims,
-    design_name="pomeroy_res",
+    design_name="met_circle",
     sim_parameters=all_params,
     export_parameters=all_export_params,
     output_folder=dir_path
@@ -345,12 +325,12 @@ with open(bat_file, "w") as f:
     f.write("set ANS_USE_ISOLATED_CLIPBOARD=1\n\n")
 
     if args.eigenmode_only:
-        f.write(f"title Pomeroy Resonator Eigenmode Simulations\n")
+        f.write("title MetCircle Eigenmode Simulations\n")
         f.write(f"echo Running {len(eigenmode_sims)} eigenmode simulation(s) in one ANSYS session...\n\n")
         all_jsons = ";".join(str(p) for p in eigenmode_json_files)
         f.write(f'"{ANSYS_EXECUTABLE}" -scriptargs "{all_jsons}" -RunScript "{batch_simulate_script}"\n')
     elif args.eigenmode_mode == "each":
-        f.write(f"title Pomeroy Resonator Eigenmode + Wave Simulations\n")
+        f.write("title MetCircle Eigenmode + Wave Simulations\n")
         f.write(f"echo Running {len(wave_sims)} eigenmode + wave pairs...\n")
         f.write(f"echo Sweep width: +/- {args.sweep_width/2} GHz\n\n")
         for i, (eigen_json, wave_json) in enumerate(zip(eigenmode_json_files, wave_json_files)):
@@ -359,7 +339,7 @@ with open(bat_file, "w") as f:
             f.write(f'"{ANSYS_EXECUTABLE}" -scriptargs "{arg}" -RunScript "{eigenmode_wave_script}"\n')
             f.write("echo.\n")
     elif args.eigenmode_mode == "shared":
-        f.write(f"title Pomeroy Resonator Eigenmode + Wave Simulations\n")
+        f.write("title MetCircle Eigenmode + Wave Simulations\n")
         f.write(f"echo Running 1 shared eigenmode + {len(wave_sims)} wave simulations...\n")
         f.write(f"echo Sweep width: +/- {args.sweep_width/2} GHz\n\n")
         shared_eigenmode_json = eigenmode_json_files[0]

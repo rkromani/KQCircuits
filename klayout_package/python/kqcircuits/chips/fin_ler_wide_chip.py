@@ -22,6 +22,10 @@ from kqcircuits.chips.chip import Chip
 from kqcircuits.pya_resolver import pya
 from kqcircuits.elements.chip_frame import ChipFrame
 from kqcircuits.elements.launcher import Launcher
+from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
+from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
+from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
+from kqcircuits.elements.fin_res_probe import FinResistanceProbe
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
 from kqcircuits.util.label import produce_label, LabelOrigin
@@ -31,6 +35,7 @@ from kqcircuits.elements.element import Element
 
 from kqcircuits.util.library_helper import load_libraries
 
+import os
 import numpy as np
 
 
@@ -45,6 +50,7 @@ import numpy as np
     face_boxes=[None, pya.DBox(pya.DPoint(0, 0), pya.DPoint(5200, 5200))],
     frames_dice_width=[50, 50],
     name_brand="RKR",
+    name_brand_size = 200,
     name_chip="FM1",
     frames_marker_dist=[250, 250],
     name_mask="tt",
@@ -56,36 +62,9 @@ import numpy as np
 # @add_parameters_from(Junction, "junction_type")
 
 
-class BlankChip(Chip):
-    include_copy_label = False  # blank chips have no junction pattern, so skip copy labels on all layers
-
+class FinLerWideChip(Chip):
     # CPW parameters for resonator and capacitor
-    a = Param(pdt.TypeDouble, "CPW center conductor width", 10, unit="μm")
-    b = Param(pdt.TypeDouble, "CPW gap width", 5.85, unit="μm")
-
-    a_launcher = Param(pdt.TypeDouble, "Pad CPW trace center", 200, unit="μm")
-    b_launcher = Param(pdt.TypeDouble, "Pad CPW trace gap", 153, unit="μm")
-    launcher_width = Param(pdt.TypeDouble, "Pad extent", 250, unit="μm")
-    taper_length = Param(pdt.TypeDouble, "Tapering length", 200, unit="μm")
-    launcher_frame_gap = Param(pdt.TypeDouble, "Gap at chip frame", 100, unit="μm")
-    launcher_indent = Param(pdt.TypeDouble, "Chip edge to pad port", 975, unit="μm")
-
-    cap_x_distance = Param(pdt.TypeDouble, "Capacitor horizontal distance from inductor", 400, unit="μm")
-    cap_y_distance = Param(pdt.TypeDouble, "Capacitor vertical distance from inductor", 1000, unit="μm")
-    launcher_turn_x = Param(pdt.TypeDouble, "Distance from tip of bias launcher to turn", 300, unit="μm")
-    bias_rail_y = Param(pdt.TypeDouble, "Y position of bias rail", 300, unit="μm")
     
-
-    # parameters to pass to junctions
-    # small junctions
-    #Q_finger_width = Param(pdt.TypeDouble, "Width of the finger.", 0.136, unit="μm")
-    #Q_bridge_gap = Param(pdt.TypeDouble, "Gap between finger and hook.", 0.15, unit="μm")
-    #Q_hook_thickness = Param(pdt.TypeDouble, "Thickness of hook on catch.", 0.100, unit="μm")
-
-    # SQUID junctions
-    #S_finger_width = Param(pdt.TypeDouble, "Width of the finger.", 1.496, unit="μm")
-    #S_bridge_gap = Param(pdt.TypeDouble, "Gap between finger and hook.", 0.15, unit="μm")
-    #S_taper = Param(pdt.TypeDouble, "Width of fixed finger.", 2.0, unit="μm")
 
     def produce_ground_grid(self):
         # no ground grid on test junction chip
@@ -123,10 +102,10 @@ class BlankChip(Chip):
                                                 test_structure_region_y - 155), 
                                                 "res")
 
-        #self.insert_cell(Profilometer, pya.DTrans(0, False,
-        #                                          test_structure_region_x - 112.5,
-        #                                          test_structure_region_y - 450),
-        #                                          "pro")
+        self.insert_cell(Profilometer, pya.DTrans(0, False,
+                                                  test_structure_region_x - 112.5,
+                                                  test_structure_region_y - 450),
+                                                  "pro")
         
         
         load_libraries(path=TestStructure.LIBRARY_PATH)
@@ -159,6 +138,66 @@ class BlankChip(Chip):
             size=50,
         )
 
+        produce_label(
+            self.cell,
+            label="UCSB",
+            location=pya.DPoint(test_structure_region_x - 350, test_structure_region_y + 420),
+            origin=LabelOrigin.TOPLEFT,
+            origin_offset=0,
+            margin=10,
+            layers=[self.face()["base_metal_gap_wo_grid"]],
+            layer_protection=self.face()["ground_grid_avoidance"],
+            size=200,
+        )
 
 
-        
+
+        # Load the RF SQUID design from OAS file, remapping layer 1 -> base_metal_gap_wo_grid
+        squid_layout = pya.Layout()
+        squid_path = os.path.join(os.path.dirname(__file__), "..", "elements", "LER_100to50_removed.gds")
+        squid_layout.read(squid_path)
+        squid_cell = squid_layout.top_cell()
+        src_layer = squid_layout.layer(1, 0)
+        squid_region = pya.Region(squid_cell.begin_shapes_rec(src_layer))
+        self.cell.shapes(self.get_layer("base_metal_gap_wo_grid", 0)).insert(squid_region)
+
+
+        fin_cutout_ll_y = 1888.5
+        fin_cutout_ll_x = 4678.5
+        cutout_width = 360
+        cutout_height = 20
+        #additional cutout for fin
+        pts_cutout = [
+                pya.DPoint(fin_cutout_ll_x, fin_cutout_ll_y),
+                pya.DPoint(fin_cutout_ll_x + cutout_height, fin_cutout_ll_y),
+                pya.DPoint(fin_cutout_ll_x + cutout_height, fin_cutout_ll_y + cutout_width),
+                pya.DPoint(fin_cutout_ll_x, fin_cutout_ll_y + cutout_width)
+                ]
+        cutout_region = pya.Region(pya.DPolygon(pts_cutout).to_itype(self.layout.dbu))
+        self.cell.shapes(self.get_layer("base_metal_gap_wo_grid", 0)).insert(cutout_region)
+
+        src_layer_30 = squid_layout.layer(30, 30)
+        sis_region = pya.Region(squid_cell.begin_shapes_rec(src_layer_30))
+        self.cell.shapes(self.get_layer("SIS_shadow", 0)).insert(sis_region)
+
+        center_y = 7500/2 + 3370/2
+        start_x = 1437.22 + 0.35/2 - 25.095# + 12.5
+        double_spacing = 1396.036
+        single_spacing = 1396.036 - 912.536
+
+        i = 4
+        if i % 2 == 0:
+            distance_from_start = double_spacing * i/2
+            flip = 0
+            mirror = True
+        else:
+            distance_from_start = double_spacing * (i-1)/2 + single_spacing
+            flip = 0
+            mirror = False
+        coord = pya.DTrans(flip, mirror, start_x + distance_from_start, center_y)
+
+        self.insert_cell(
+                FinResistanceProbe, coord, f"Probe{i}", 
+                #**element_params[i],
+            )
+            

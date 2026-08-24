@@ -200,7 +200,11 @@ def _transformation_for_junction_face(top_cell: pya.Cell, junction_face_ids: lis
                 bbox = bb
     refpoints = get_refpoints(layout.layer(default_layers["refpoints"]), top_cell)
     face = junction_face_ids[0]
-    chip_is_mirrored = refpoints[f"{face}_marker_se"].x < refpoints[f"{face}_marker_sw"].x
+    se_key = f"{face}_marker_se"
+    sw_key = f"{face}_marker_sw"
+    if se_key not in refpoints.dict() or sw_key not in refpoints.dict():
+        return pya.DCplxTrans()
+    chip_is_mirrored = refpoints[se_key].x < refpoints[sw_key].x
     if chip_is_mirrored:
         # Mirror by Y-axis = mirror by X-axis * rotate 180 degrees
         # Then need to shift the chip back so left and right edges of mirrored chip

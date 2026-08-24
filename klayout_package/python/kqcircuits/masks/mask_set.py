@@ -85,6 +85,7 @@ class MaskSet:
         export_path=None,
         add_mask_name_to_chips=False,
         name_date="",
+        chip_copy_label_layers=None,
     ):
 
         self._time = {"INIT": perf_counter(), "ADD_CHIPS": 0, "BUILD": 0, "EXPORT": 0, "END": 0}
@@ -102,6 +103,7 @@ class MaskSet:
         self.with_grid = with_grid
         self.export_drc = export_drc
         self.chips_map_legend = {}
+        self._no_copy_label_chips = set()
         self.mask_layouts = []
         self.mask_export_layers = mask_export_layers if mask_export_layers is not None else []
         self.used_chips = {}
@@ -118,6 +120,9 @@ class MaskSet:
         self._extra_params["mock_chips"] = "-m" in argv
         self._extra_params["skip_extras"] = "-s" in argv
         self._extra_params["name_date"] = name_date
+        self._chip_copy_label_layers = chip_copy_label_layers if chip_copy_label_layers is not None else [
+            "base_metal_gap", "base_metal_gap_wo_grid", "base_metal_gap_for_EBL"
+        ]
 
         self._cpu_override = 0
         if "-c" in argv and len(argv) > argv.index("-c") + 1:
@@ -211,6 +216,14 @@ class MaskSet:
         if self._cpu_override > 0:
             cpus = self._cpu_override
 
+        # Record which variants should not receive copy labels
+        for chip_tuple in chips:
+            chip_class, chip_variant, *chip_params_list = chip_tuple
+            chip_params = chip_params_list[0] if chip_params_list else {}
+            include_label = chip_params.get("include_copy_label", getattr(chip_class, "include_copy_label", True))
+            if not include_label:
+                self._no_copy_label_chips.add(chip_variant)
+
         # Pool.map() needs all arguments packed into a single list
         xargs = (self.name, self.with_grid, self._mask_set_dir, self.export_drc, self._extra_params)
         chip_args = ((chip, xargs) for chip in chips)
@@ -236,6 +249,7 @@ class MaskSet:
         chip_class, variant_name, *chip_params = chip
         chip_params = chip_params[0] if chip_params else {}
         alt_netlists = chip_params.pop("alt_netlists", None)
+        chip_params.pop("include_copy_label", None)  # handled at MaskSet level
 
         chip_path = _mask_set_dir / "Chips" / f"{variant_name}"
         chip_path.mkdir(parents=True, exist_ok=True)
@@ -303,7 +317,7 @@ class MaskSet:
                 mask_layout.name += "-" + mask_layout.face_id
             mask_layout.build(self.chips_map_legend)
 
-        chip_copy_label_layers = ["base_metal_gap", "base_metal_gap_wo_grid", "base_metal_gap_for_EBL"]
+        chip_copy_label_layers = self._chip_copy_label_layers
 
         # Insert submask cells to different cell instances, so that these cells can have different chip labels even if
         # the original submask cells are identical. Also copy the MaskLayout objects of identical submasks into separate
@@ -345,10 +359,12 @@ class MaskSet:
             mask_layout.top_cell.insert(pya.DCellInstArray(labels_cell.cell_index(), pya.DTrans(pya.DVector(0, 0))))
             if mask_layout not in submask_layouts:
                 if isinstance(mask_layout.chips_map, dict):
-                    mask_layout.insert_chip_copy_labels(labels_cell, chip_copy_label_layers, mask_name_for_chip)
+                    mask_layout.insert_chip_copy_labels(
+                        labels_cell, chip_copy_label_layers, mask_name_for_chip, self._no_copy_label_chips
+                    )
                 else:
                     mask_layout.generate_and_insert_chip_copy_labels(
-                        labels_cell, chip_copy_label_layers, mask_name_for_chip
+                        labels_cell, chip_copy_label_layers, mask_name_for_chip, self._no_copy_label_chips
                     )
                 # remove "$1" or similar unnecessary postfix from cell name
                 mask_layout.top_cell.name = f"{mask_layout.name}"

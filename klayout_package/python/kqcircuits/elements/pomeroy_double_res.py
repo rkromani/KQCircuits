@@ -47,7 +47,7 @@ class PomeroyDoubleRes(Element):
     feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", False)
 
     l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 10000, unit="μm")
-    l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 150, unit="μm")
+    l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 600, unit="μm")
     l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and ground in coupling region", 10, unit="μm")
     l_width = Param(pdt.TypeDouble, "Inductor width", 4, unit="μm")
     l_radius = Param(pdt.TypeDouble, "Radius of inductor bends", 25, unit="μm")

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from kqcircuits.chips.chip import Chip
 from kqcircuits.chips.fin_met_chip import FinMetChip
-from kqcircuits.chips.fin_rf_squid_chip import FinRfSquidChip
+from kqcircuits.chips.fin_ler_wide_chip import FinLerWideChip
 from kqcircuits.chips.blank_chip import BlankChip
 from kqcircuits.masks.mask_set import MaskSet
 from kqcircuits.masks.mask_export import get_mask_layout_full_name
@@ -38,12 +38,12 @@ load_libraries(path="test_structures")
 
 if __name__ == "__main__":
     mdemo = MaskSet(
-        name="FinMET1",
-        version=6,
+        name="FinMET2",
+        version=1,
         with_grid=False,
         mask_export_layers=["base_metal_gap_wo_grid", "SIS_shadow", "SIS_junction_2", "chip_dicing"],
         export_path=TMP_PATH,
-        name_date="260807",  # <-- date/version label on every chip; update each run
+        name_date="260601",  # <-- date/version label on every chip; update each run
     )
 
     layers_to_mask = {"base_metal_gap_wo_grid": "1"}
@@ -70,15 +70,14 @@ if __name__ == "__main__":
     """# Bottom face (1t1) mask
     mdemo.add_mask_layout(
         [
-                    ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
-            ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
-            
+            ["---", "---",   "FLER",  "FMET",  "FLER",  "FMETR", "FLER",   "---",  "---"],
+            ["---", "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "FMET",  "---"],
+            ["---", "FLER",  "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "---"],
+            ["---", "FMETR", "FLER",  "FMET",  "FLER",  "FMETR", "FLER",  "FMET",  "---"],
+            ["---", "FLER",  "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "---"],
+            ["---", "FMETR", "FLER",  "FMET",  "FLER",  "FMETR", "FLER",  "FMET",  "---"],
+            ["---", "FLER",  "FMETR", "FLER",  "FMET",  "FLER",  "FMETR",  "FLER",  "---"],
+            ["---", "---",   "FLER", "FMETR",  "FMET",  "FLER",  "FMETR",   "---",  "---"],
         ],
         "1t1",
         layers_to_mask=layers_to_mask,
@@ -95,14 +94,14 @@ if __name__ == "__main__":
     # Bottom face (1t1) mask
     mdemo.add_mask_layout(
         [
-            ["---", "---",   "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---",   "---"],
-            ["---", "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "---"],
-            ["---", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---"],
-            ["---", "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "---"],
-            ["---", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---"],
-            ["---", "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "---"],
-            ["---", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "FMETR", "FLER",  "---"],
-            ["---", "---",   "FLER",  "FMETR", "FMETR", "FLER",  "FMETR", "---",   "---"],
+            ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
+            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
+            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
+            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
+            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
+            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
+            ["---", "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "FLER",  "---"],
+            ["---", "---",   "FLER",  "FLER",  "FLER",  "FLER",  "FLER",   "---",  "---"],
         ],
         "1t1",
         layers_to_mask=layers_to_mask,
@@ -114,7 +113,6 @@ if __name__ == "__main__":
         wafer_bottom_flat_length=22000,
         edge_clearance=100,
         chip_trans=pya.DTrans().R90,
-        square_in_dicing=True,
     )
 
     # chip definitions
@@ -122,7 +120,7 @@ if __name__ == "__main__":
         [
             (FinMetChip, "FMET", {"enable_resistance_probe": False}),
             (FinMetChip, "FMETR", {"enable_resistance_probe": True}),  # variant without resistance probe structures
-            (FinRfSquidChip, "FLER"),
+            (FinLerWideChip, "FLER"),
             #(QualityFactor, "BR1", {"n_ab": [1, 2, 3, 4, 5, 6]}),
         ]
     )
@@ -140,8 +138,7 @@ if __name__ == "__main__":
     # Layer EXTERNAL_MERGE_LAYER from the external file is merged (boolean OR) into base_metal_gap_wo_grid.
     # All other layers in the external file are appended as-is.
     #EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260321_FinMET_LERes_Transmon_V3_Teun_rotated.gds")  # <-- set this path
-    #EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260514_LERes_Angle_V1_Teun_rotated.gds")  # <-- set this path
-    EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260718_FinMET_LERes_Transmon_75to150nm_3nmstep_v2_rotated.gds")  # <-- set this path 
+    EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260514_LERes_Angle_V1_Teun_rotated.gds")  # <-- set this path
     EXTERNAL_MERGE_LAYER = pya.LayerInfo(26, 0)       # layer/datatype to merge into base_metal_gap_wo_grid
 
     ext_layout = pya.Layout()

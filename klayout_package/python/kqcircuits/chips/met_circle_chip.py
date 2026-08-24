@@ -25,8 +25,7 @@ from kqcircuits.elements.launcher import Launcher
 from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
-from kqcircuits.elements.pomeroy_res import PomeroyRes
-from kqcircuits.elements.alignment_pomeroy_local import AlignmentPomeroyLocal
+from kqcircuits.elements.met_circle import MetCircle
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
 from kqcircuits.util.label import produce_label, LabelOrigin
@@ -51,7 +50,7 @@ import numpy as np
     frames_dice_width=[50, 50],
     name_brand="RKR",
     name_brand_size = 200, 
-    name_chip="PR1",
+    name_chip="FM1",
     frames_marker_dist=[250, 250],
     name_mask="tt",
     name_copy="",
@@ -62,7 +61,7 @@ import numpy as np
 # @add_parameters_from(Junction, "junction_type")
 
 
-class PomeroyResChip(Chip):
+class MetCircleChip(Chip):
     # CPW parameters for resonator and capacitor
     a = Param(pdt.TypeDouble, "CPW center conductor width", 10, unit="μm")
     b = Param(pdt.TypeDouble, "CPW gap width", 5.85, unit="μm")
@@ -73,13 +72,14 @@ class PomeroyResChip(Chip):
     taper_length = Param(pdt.TypeDouble, "Tapering length", 200, unit="μm")
     launcher_frame_gap = Param(pdt.TypeDouble, "Gap at chip frame", 100, unit="μm")
     launcher_indent = Param(pdt.TypeDouble, "Chip edge to pad port", 975, unit="μm")
-    
+
+    cap_x_distance = Param(pdt.TypeDouble, "Capacitor horizontal distance from inductor", 400, unit="μm")
+    cap_y_distance = Param(pdt.TypeDouble, "Capacitor vertical distance from inductor", 1000, unit="μm")
+    launcher_turn_x = Param(pdt.TypeDouble, "Distance from tip of bias launcher to turn", 300, unit="μm")
+    bias_rail_y = Param(pdt.TypeDouble, "Y position of bias rail", 300, unit="μm")
     date_label = Param(pdt.TypeString, "Date/version label printed on chip", "")
 
-    first_cap_gone = Param(pdt.TypeBoolean, "Whether the first capacitance is there to allow for measurement of parasitic capacitance", True)
-    cap_dims_x = Param(pdt.TypeList, "X dimension of capacitors", [0.0, 0.5, 1, 1, 2, 2, 2, 2], unit="μm")
-    cap_dims_y = Param(pdt.TypeList, "Y dimension of capacitors", [0.0, 0.5, 1, 2, 2, 2.5, 3, 4], unit="μm")
-    extra_cap_height = Param(pdt.TypeDouble, "Height of extra planar capacitor", 80, unit="μm")
+    enable_resistance_probe = Param(pdt.TypeBoolean, "Whether to add probe structures for resistance measurements", True)
     
 
     # parameters to pass to junctions
@@ -155,7 +155,7 @@ class PomeroyResChip(Chip):
 
         produce_label(
             self.cell,
-            label="R K Romani",
+            label="R K Romani + TFL",
             location=pya.DPoint(test_structure_region_x - 320, test_structure_region_y - 150),
             origin=LabelOrigin.TOPLEFT,
             origin_offset=0,
@@ -165,23 +165,17 @@ class PomeroyResChip(Chip):
             size=50,
         )
 
-
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 - 2500,
-                                                  3750 - 2500),
-                                                  "alignment_local")
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 + 2500,
-                                                  3750 - 2500),
-                                                  "alignment_local")
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 - 2500,
-                                                  3750 + 2500),
-                                                  "alignment_local")
-        self.insert_cell(AlignmentPomeroyLocal, pya.DTrans(0, False,
-                                                  3750 + 2500,
-                                                  3750 + 2500),
-                                                  "alignment_local")
+        produce_label(
+            self.cell,
+            label="UCSB",
+            location=pya.DPoint(test_structure_region_x - 350, test_structure_region_y + 420),
+            origin=LabelOrigin.TOPLEFT,
+            origin_offset=0,
+            margin=10,
+            layers=[self.face()["base_metal_gap_wo_grid"]],
+            layer_protection=self.face()["ground_grid_avoidance"],
+            size=200,
+        )
 
 
 
@@ -199,44 +193,49 @@ class PomeroyResChip(Chip):
         BR_coords = []
 
         center_y = 7500/2 + 5
-        start_x = 1500
+        start_x = 1437.22 + 0.35/2 - 25.095 + 12.5
+        double_spacing = 1396.036
+        single_spacing = 1396.036 - 912.536
         n_elements = 8        
-        spacing = (7500 - start_x*2)/(n_elements - 1)
         
-        #cap_dims_x = np.asarray([0.0, 0.5, 1, 1, 2, 2, 2, 2])
-        #cap_dims_y = np.asarray([0.0, 0.5, 1, 2, 2, 2.5, 3, 4])
-        element_params = []
+        base_length = 3950
+        spacing = 0.025
+        element_params = [{'feedline_length': 10, 'res_length': base_length*(1-3*spacing), 'coupler_cap_spacing': 20}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1-2*spacing), 'coupler_cap_spacing': 20}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1-1*spacing), 'coupler_cap_spacing': 10}, {'feedline_length': 10, 'res_length': base_length*1, 'coupler_cap_spacing': 10},
+                          {'feedline_length': 10, 'res_length': base_length*(1+1*spacing)}, {'feedline_length': 10, 'res_length': base_length*(1+2*spacing)}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1+3*spacing), 'coupler_cap_spacing': 5}, 
+                          {'feedline_length': 10, 'res_length': base_length*(1+4*spacing), 'coupler_cap_spacing': 5},]
         i = 0
         while i < n_elements:
-            if (i == 0) and (self.first_cap_gone):
-                element_params.append({'include_ebeam': False, 'extra_cap_height': self.extra_cap_height})
-            else:
-                element_params.append({'cap_width': self.cap_dims_x[i], 'cap_height': self.cap_dims_y[i], 'extra_cap_height': self.extra_cap_height})
-            i += 1
-
-        i = 0
-        while i < n_elements:
-            distance_from_start = spacing * i
             if i % 2 == 0:
-                rotate = 0
-                offset_y = -1400
+                distance_from_start = double_spacing * i/2
+                flip = 0
+                mirror = True
             else:
-                rotate = 2
-                offset_y = 1400
-            coord = pya.DTrans(rotate, False, start_x + distance_from_start, center_y)
+                distance_from_start = double_spacing * (i-1)/2 + single_spacing
+                flip = 0
+                mirror = False
+            coord = pya.DTrans(flip, mirror, start_x + distance_from_start, center_y)
 
-            self.insert_cell(
-                PomeroyRes, coord, f"R{i}", 
-                feedline_cutout_bool=False,
-                feedline_length = 400, 
-                **element_params[i],
-            )
+            if self.enable_resistance_probe:
+                self.insert_cell(
+                    MetCircle, coord, f"MC{i}", 
+                    feedline_cutout_bool=False,
+                    **element_params[i],
+                )
+            else:
+                self.insert_cell(
+                    MetCircle, coord, f"MC{i}", 
+                    feedline_cutout_bool=False,
+                    **element_params[i],
+                )
 
-            offset_x = -180
-            produce_label(
+            
+            """produce_label(
                 self.cell,
-                label=str(self.cap_dims_x[i]) + " x " + str(self.cap_dims_y[i]),
-                location=pya.DPoint(start_x + distance_from_start + offset_x, center_y + offset_y),
+                label="l_coupling_length " + str(res_params[i]["l_coupling_length"]),
+                location=pya.DPoint(center_x - (i - (n_res-1)/2)*spacing + offset_x, center_y + offset_y),
                 origin=LabelOrigin.TOPLEFT,
                 origin_offset=0,
                 margin=10,
@@ -244,15 +243,31 @@ class PomeroyResChip(Chip):
                 layer_protection=self.face()["ground_grid_avoidance"],
                 size=50,
             )
+            produce_label(
+                self.cell,
+                label="l_tot_length " + str(res_params[i]["l_tot_length"]),
+                location=pya.DPoint(center_x - (i - (n_res-1)/2)*spacing + offset_x, center_y + offset_y + 100),
+                origin=LabelOrigin.TOPLEFT,
+                origin_offset=0,
+                margin=10,
+                layers=[self.face()["base_metal_gap_wo_grid"]],
+                layer_protection=self.face()["ground_grid_avoidance"],
+                size=50,
+            )"""
 
             i += 1
 
+        launcher_feed_middle = ((-self.refpoints["W1_port"].x + self.refpoints["E1_port"].x)/2)
+        self.refpoints["launcher_feed_middle_l1"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["E1_port"].y)
+        self.refpoints["launcher_feed_middle_l2"] = pya.DPoint(self.refpoints["E1_port"].x - launcher_feed_middle, self.refpoints["MC0_feedline_b"].y)
+        self.refpoints["launcher_feed_middle_r1"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints["W1_port"].y)
+        self.refpoints["launcher_feed_middle_r2"] = pya.DPoint(self.refpoints["W1_port"].x + launcher_feed_middle, self.refpoints[f"MC{n_elements-1}_feedline_b"].y)
         left_ref_names = ["W1_port"]
         right_ref_names = []
         i = 0
         while i < n_elements:
-            left_ref_names.append(f"R{i}_feedline_a")
-            right_ref_names.append(f"R{i}_feedline_b")
+            left_ref_names.append(f"MC{i}_feedline_a")
+            right_ref_names.append(f"MC{i}_feedline_b")
             i += 1
         right_ref_names.append("E1_port")
 
@@ -262,6 +277,8 @@ class PomeroyResChip(Chip):
                 WaveguideComposite, 
                 nodes=[
                     Node(self.refpoints[left_ref_names[i]]),
+                    #Node(self.refpoints['launcher_feed_middle_r1']),
+                    #Node(self.refpoints['launcher_feed_middle_r2']),
                     Node(self.refpoints[right_ref_names[i]])
                 ],
             )

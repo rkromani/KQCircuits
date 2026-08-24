@@ -33,8 +33,10 @@ class AlignmentMarkers(Element):
     Also draws a wafer outline with flat on the chip_dicing layer.
     """
 
-    cross_arm_length = Param(pdt.TypeDouble, "Half-length of each cross arm (um)", 300)
-    cross_arm_width = Param(pdt.TypeDouble, "Width of each cross arm (um)", 10)
+    cross_arm_length = Param(pdt.TypeDouble, "Half-length of each cross arm (um)", 500)
+    aligned_cross_arm_length = Param(pdt.TypeDouble, "Half-length of each cross arm for aligned pattern (um)", 20)
+    cross_arm_width = Param(pdt.TypeDouble, "Width of each cross arm (um)", 3)
+    aligned_cross_arm_width = Param(pdt.TypeDouble, "Width of each cross arm for aligned pattern (um)", 2)
     # Edit this list directly to set marker locations (pya.DPoint, um from wafer center)
     marker_positions = [
             pya.DPoint(30000, -2000),
@@ -64,40 +66,42 @@ class AlignmentMarkers(Element):
         h_rect = pya.DBox(-L, -W/2, L, W/2)
         v_rect = pya.DBox(-W/2, -L, W/2, L)
 
+        L = self.aligned_cross_arm_length
+        W_aligned = self.aligned_cross_arm_width
         pts_around_cross_tl = [
             pya.DPoint(-W/2, W/2),
-            pya.DPoint(-W/2, L - W),
-            pya.DPoint(-3*W/2, L - W),
-            pya.DPoint(-3*W/2, 3*W/2),
-            pya.DPoint(-L+W, 3*W/2),
-            pya.DPoint(-L+W, W/2),
+            pya.DPoint(-W/2, L),
+            pya.DPoint(-W/2 - W_aligned, L),
+            pya.DPoint(-W/2 - W_aligned, W_aligned + W/2),
+            pya.DPoint(-L, W_aligned + W/2),
+            pya.DPoint(-L, W/2),
         ]
         region_around_cross_tl = pya.Region(pya.DPolygon(pts_around_cross_tl).to_itype(self.layout.dbu))
         pts_around_cross_tr = [
             pya.DPoint(W/2, W/2),
-            pya.DPoint(W/2, L - W),
-            pya.DPoint(3*W/2, L - W),
-            pya.DPoint(3*W/2, 3*W/2),
-            pya.DPoint(L-W, 3*W/2),
-            pya.DPoint(L-W, W/2),
+            pya.DPoint(W/2, L),
+            pya.DPoint(W/2 + W_aligned, L),
+            pya.DPoint(W/2 + W_aligned, W_aligned + W/2),
+            pya.DPoint(L, W_aligned + W/2),
+            pya.DPoint(L, W/2),
         ]
         region_around_cross_tr = pya.Region(pya.DPolygon(pts_around_cross_tr).to_itype(self.layout.dbu))
         pts_around_cross_bl = [
             pya.DPoint(-W/2, -W/2),
-            pya.DPoint(-W/2, -L + W),
-            pya.DPoint(-3*W/2, -L + W),
-            pya.DPoint(-3*W/2, -3*W/2),
-            pya.DPoint(-L+W, -3*W/2),
-            pya.DPoint(-L+W, -W/2),
+            pya.DPoint(-W/2, -L),
+            pya.DPoint(-W/2 - W_aligned, -L),
+            pya.DPoint(-W/2 - W_aligned, -W_aligned - W/2),
+            pya.DPoint(-L, -W_aligned - W/2),
+            pya.DPoint(-L, -W/2),
         ]
         region_around_cross_bl = pya.Region(pya.DPolygon(pts_around_cross_bl).to_itype(self.layout.dbu))
         pts_around_cross_br = [
             pya.DPoint(W/2, -W/2),
-            pya.DPoint(W/2, -L + W),
-            pya.DPoint(3*W/2, -L + W),
-            pya.DPoint(3*W/2, -3*W/2),
-            pya.DPoint(L-W, -3*W/2),
-            pya.DPoint(L-W, -W/2),
+            pya.DPoint(W/2, -L),
+            pya.DPoint(W/2 + W_aligned, -L),
+            pya.DPoint(W/2 + W_aligned, -W_aligned - W/2),
+            pya.DPoint(L, -W_aligned - W/2),
+            pya.DPoint(L, -W/2),
         ]
         region_around_cross_br = pya.Region(pya.DPolygon(pts_around_cross_br).to_itype(self.layout.dbu))
         region_around_cross = region_around_cross_tl + region_around_cross_tr + region_around_cross_bl + region_around_cross_br

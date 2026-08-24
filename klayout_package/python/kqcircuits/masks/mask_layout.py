@@ -127,6 +127,9 @@ class MaskLayout:
         self.wafer_bottom_flat_length = kwargs.get("wafer_bottom_flat_length", 0)
         self.wafer_outline_in_dicing = kwargs.get("wafer_outline_in_dicing", False)
         self.wafer_outline_width = kwargs.get("wafer_outline_width", 200)
+        self.square_in_dicing = kwargs.get("square_in_dicing", False)
+        self.square_size = kwargs.get("square_size", 40000)
+        self.square_outline_width = kwargs.get("square_outline_width", 200)
         self.dice_width = kwargs.get("dice_width", default_mask_parameters[self.face_id]["dice_width"])
         self.text_margin = kwargs.get("text_margin", default_mask_parameters[self.face_id]["text_margin"])
         self.chip_size = kwargs.get("chip_size", default_mask_parameters[self.face_id]["chip_size"])
@@ -334,7 +337,7 @@ class MaskLayout:
             _chip_placement_dict[coord] = {"chip_name": chip_name, "position_label": position_label}
         return _chip_placement_dict
 
-    def generate_and_insert_chip_copy_labels(self, labels_cell, layers, mask_name_for_chip=None):
+    def generate_and_insert_chip_copy_labels(self, labels_cell, layers, mask_name_for_chip=None, no_copy_label_chips=None):
         """Inserts chip copy labels to all chips in this mask layout and its submasks
 
         Args:
@@ -379,16 +382,19 @@ class MaskLayout:
                 chips_dict[get_chip_size_and_coordinate(bbox, dtrans)[1]]["position_label"],
             )
             self.added_chips[i] = chip_sub_list
-        self.insert_chip_copy_labels(labels_cell, layers, mask_name_for_chip=mask_name_for_chip)
+        self.insert_chip_copy_labels(labels_cell, layers, mask_name_for_chip=mask_name_for_chip, no_copy_label_chips=no_copy_label_chips)
 
-    def insert_chip_copy_labels(self, labels_cell, layers, mask_name_for_chip=None):
+    def insert_chip_copy_labels(self, labels_cell, layers, mask_name_for_chip=None, no_copy_label_chips=None):
         """Inserts position labels and mask name into chip frames, and then updates self.chip_copies dictionary
 
         Args:
             labels_cell: Cell to which the labels are inserted
             layers: list of layer names (without face_ids) where the labels are produced
             mask_name_for_chip: mask name to place on each chip, or None (default) to not add mask names to the chip.
+            no_copy_label_chips: set of chip variant names that should not receive copy labels
         """
+        if no_copy_label_chips is None:
+            no_copy_label_chips = set()
         labels_cells = {self: labels_cell}
         _rot_to_origin = {
             0: LabelOrigin.BOTTOMRIGHT,
@@ -397,6 +403,8 @@ class MaskLayout:
             3: LabelOrigin.BOTTOMLEFT,
         }
         for chip_name, _, _, bbox, dtrans, position_label in self.added_chips:
+            if chip_name in no_copy_label_chips:
+                continue
             labels_cell_2 = labels_cells[self]
             total_mirror_label = bool(dtrans.is_mirror()) ^ bool(self.mirror_labels)
             bbox_x1, bbox_x2 = (bbox.left, bbox.right) if total_mirror_label else (bbox.right, bbox.left)
@@ -673,6 +681,19 @@ class MaskLayout:
             if len(points) > 1:
                 outline = pya.DPath(points, self.wafer_outline_width, 0, 0, True)
                 maskextra_cell.shapes(self.layout.layer(self.face()["chip_dicing"])).insert(outline)
+
+        if self.square_in_dicing:
+            s = self.square_size
+            w = self.square_outline_width
+            sq_pts = [
+                pya.DPoint(-s, -s + w/2),
+                pya.DPoint(s - w/2, -s + w/2),
+                pya.DPoint(s - w/2, s - w/2),
+                pya.DPoint(-s + w/2, s - w/2),
+                pya.DPoint(-s + w/2, -s),
+            ]
+            sq_outline = pya.DPath(sq_pts, w, 0, 0, False)
+            maskextra_cell.shapes(self.layout.layer(self.face()["chip_dicing"])).insert(sq_outline)
 
         self.top_cell.insert(pya.DCellInstArray(maskextra_cell.cell_index(), pya.DTrans()))
 
