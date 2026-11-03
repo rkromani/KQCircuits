@@ -39,11 +39,11 @@ load_libraries(path="test_structures")
 if __name__ == "__main__":
     mdemo = MaskSet(
         name="FinMET1",
-        version=6,
+        version=9,
         with_grid=False,
         mask_export_layers=["base_metal_gap_wo_grid", "SIS_shadow", "SIS_junction_2", "chip_dicing"],
         export_path=TMP_PATH,
-        name_date="260807",  # <-- date/version label on every chip; update each run
+        name_date="261102B",  # <-- date/version label on every chip; update each run
     )
 
     layers_to_mask = {"base_metal_gap_wo_grid": "1"}
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     # All other layers in the external file are appended as-is.
     #EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260321_FinMET_LERes_Transmon_V3_Teun_rotated.gds")  # <-- set this path
     #EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260514_LERes_Angle_V1_Teun_rotated.gds")  # <-- set this path
-    EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\260718_FinMET_LERes_Transmon_75to150nm_3nmstep_v2_rotated.gds")  # <-- set this path 
+    EXTERNAL_GDS = Path(r"C:\Users\rkr1\Downloads\261006_FinMET_LERes_Transmon_75to100nm_1nmstep_v1_rotated.gds")  # <-- set this path 
     EXTERNAL_MERGE_LAYER = pya.LayerInfo(26, 0)       # layer/datatype to merge into base_metal_gap_wo_grid
 
     ext_layout = pya.Layout()

@@ -53,6 +53,9 @@ class CoupledInductor(Element):
     l_connection_spacing = Param(pdt.TypeDouble, "Spacing between inductors two connections", 200, unit="μm")
 
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", True)
+    include_inductor = Param(pdt.TypeBoolean,
+        "Whether to draw the inductor conductor (disable to leave the ground cutout it lives in "
+        "empty, isolating whatever connects to its ends for Q3D capacitance measurements)", True)
     enable_feedline_termination = Param(pdt.TypeBoolean, "Whether to terminate the feedline with RLC sim elements", False)
     sim_gap = Param(pdt.TypeBoolean, "Gap for ACRL simulation", False)
 
@@ -83,7 +86,7 @@ class CoupledInductor(Element):
         ground_cutout.round_corners(self.ground_radius / self.layout.dbu, self.ground_radius / self.layout.dbu, self.n)
         
         feedline_region = self._make_feedline()
-        inductor_region = self._make_inductor_region()
+        inductor_region = self._make_inductor_region() if self.include_inductor else pya.Region()
 
         self.cell.shapes(self.get_layer("base_metal_gap_wo_grid")).insert(
             feedline_region + ground_cutout - inductor_region
@@ -93,8 +96,8 @@ class CoupledInductor(Element):
 
         coupling_mesh_pts = [
             pya.DPoint(self.l_coupling_length/2 + self.l_radius, self.a/2 + self.b),
-            pya.DPoint(self.l_coupling_length/2 + self.l_radius, self.ground_gap_top - self.l_coupling_distance - self.l_width),
-            pya.DPoint(-self.l_coupling_length/2 - self.l_radius, self.ground_gap_top - self.l_coupling_distance - self.l_width),
+            pya.DPoint(self.l_coupling_length/2 + self.l_radius, self.ground_gap_top - self.l_coupling_distance - 2*self.l_width),
+            pya.DPoint(-self.l_coupling_length/2 - self.l_radius, self.ground_gap_top - self.l_coupling_distance - 2*self.l_width),
             pya.DPoint(-self.l_coupling_length/2 - self.l_radius, self.a/2 + self.b)
         ]
         coupling_mesh_region = pya.Region(pya.DPolygon(coupling_mesh_pts).to_itype(self.layout.dbu))

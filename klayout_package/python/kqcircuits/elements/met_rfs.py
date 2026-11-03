@@ -35,7 +35,7 @@ import math
 @add_parameters_from(WaveguideCoplanar, "add_metal")
 class MetRfs(Element):
 
-    l_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout", 1300, unit="μm")
+    l_ground_cutout_width = Param(pdt.TypeDouble, "Width of ground cutout", 1400, unit="μm")
     l_ground_cutout_height = Param(pdt.TypeDouble, "Height of ground cutout", 1500, unit="μm")
     l_ground_radius = Param(pdt.TypeDouble, "Radius of ground cutout corners", 10, unit="μm")
 
@@ -45,11 +45,11 @@ class MetRfs(Element):
     feedline_cutout = Param(pdt.TypeDouble, "Feedline cutout length", 50, unit="μm")
     feedline_cutout_bool = Param(pdt.TypeBoolean, "Whether to add feedline cutout", False)
 
-    l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 6000, unit="μm")
+    l_tot_length = Param(pdt.TypeDouble, "Total length of inductor", 4700, unit="μm")
     l_coupling_length = Param(pdt.TypeDouble, "Length of inductor coupling region", 200, unit="μm")
     l_coupling_distance = Param(pdt.TypeDouble, "Distance between inductor and ground in coupling region", 40, unit="μm")
     l_width = Param(pdt.TypeDouble, "Inductor width", 4, unit="μm")
-    l_radius = Param(pdt.TypeDouble, "Radius of inductor bends", 25, unit="μm")
+    l_radius = Param(pdt.TypeDouble, "Radius of inductor bends", 50, unit="μm")
     l_ground_sep = Param(pdt.TypeDouble, "Separation between inductor and ground cutout", 300, unit="μm")
     l_middle_sep = Param(pdt.TypeDouble, "Separation between one side and the other of the inductor", 300, unit="μm")
     l_connection_spacing = Param(pdt.TypeDouble, "Spacing between inductors two connections", 400, unit="μm")\
@@ -64,7 +64,10 @@ class MetRfs(Element):
     met_ground_radius = Param(pdt.TypeDouble, "Radius of ground cutout corners for MET", 5, unit="μm")
 
     enable_mesh_layers = Param(pdt.TypeBoolean, "Enable mesh control layers for ANSYS", True)
-    enable_rlc = Param(pdt.TypeBoolean, "Whether to add RLC elements for modeling", True)
+    include_inductor = Param(pdt.TypeBoolean,
+        "Whether to include the inductor (disable to isolate the extra planar capacitor "
+        "at the end of the inductor for Q3D capacitance measurements)", True)
+    enable_rlc = Param(pdt.TypeBoolean, "Whether to add RLC elements for modeling", False)
     enable_feedline_termination = Param(pdt.TypeBoolean, "Whether to terminate the feedline with RLC sim elements", False)
     sim_gap = Param(pdt.TypeBoolean, "Gap for ACRL simulation", False)
 
@@ -86,19 +89,25 @@ class MetRfs(Element):
                          feedline_coupling_ground_spacing=self.feedline_coupling_ground_spacing,
                          feedline_cutout=self.feedline_cutout,
                          feedline_cutout_bool=self.feedline_cutout_bool,
-                         feedline_length=self.feedline_length, 
+                         feedline_length=self.feedline_length,
                          l_tot_length=self.l_tot_length,
                          l_coupling_length=self.l_coupling_length,
                          l_coupling_distance=self.l_coupling_distance,
                          l_width=self.l_width,
                          l_connection_spacing=self.l_connection_spacing,
+                         include_inductor=self.include_inductor,
                          enable_mesh_layers=self.enable_mesh_layers,
                          enable_feedline_termination=self.enable_feedline_termination,
                          n=self.n)
 
+        # Re-expose the sub-cell's ACRL refpoints at top level (insert_cell prefixes them with
+        # "main_inductor_"), so get_acrl_sim_class(MetRfs) can auto-detect them.
+        self.refpoints["acrl_source_main_inductor"] = self.refpoints["main_inductor_acrl_source_main_inductor"]
+        self.refpoints["acrl_sink_main_inductor"] = self.refpoints["main_inductor_acrl_sink_main_inductor"]
+
         self.l_ground_bottom = -self.l_ground_cutout_height -self.a/2 -self.b -self.feedline_coupling_ground_spacing
 
-        met_center_x = self.l_connection_spacing/2 + self.met_length/2
+        met_center_x = self.l_connection_spacing/2 - self.met_length/2 - self.l_width/2
         met_center_y = self.l_ground_bottom - self.extra_cap_height - self.met_ground_cutout_height/2
         coord = pya.DTrans(1, False, met_center_x, met_center_y)
         palm_width = 7
@@ -118,8 +127,8 @@ class MetRfs(Element):
                 #**element_params[i],
             )
 
-        self.cap_ground_gap_left = self.l_connection_spacing/2 - self.met_ground_cutout_width + self.met_length
-        self.cap_ground_gap_right = self.l_connection_spacing/2 + self.met_length
+        self.cap_ground_gap_left = self.l_connection_spacing/2 - self.met_length - self.l_width/2
+        self.cap_ground_gap_right = self.l_connection_spacing/2 + self.met_ground_cutout_width - self.met_length
         pts_add_gap = [
             pya.DPoint(self.cap_ground_gap_left, self.l_ground_bottom),
             pya.DPoint(self.cap_ground_gap_left, self.l_ground_bottom - self.extra_cap_height - self.met_ground_cutout_height),
@@ -139,10 +148,10 @@ class MetRfs(Element):
         extra_cap_region = pya.Region(extra_cap_region.to_itype(self.layout.dbu))
 
         met_wire_pts = [
-            pya.DPoint(met_center_x - self.met_pad_height - self.met_length/2, self.l_ground_bottom - self.extra_cap_height),
-            pya.DPoint(met_center_x - self.met_pad_height - self.met_length/2, met_center_y - self.met_pad_width/2),
-            pya.DPoint(met_center_x - self.met_length/2, met_center_y - self.met_pad_width/2),
-            pya.DPoint(met_center_x - self.met_length/2, self.l_ground_bottom - self.extra_cap_height),
+            pya.DPoint(met_center_x + self.met_pad_height + self.met_length/2, self.l_ground_bottom - self.extra_cap_height),
+            pya.DPoint(met_center_x + self.met_pad_height + self.met_length/2, met_center_y - self.met_pad_width/2),
+            pya.DPoint(met_center_x + self.met_length/2, met_center_y - self.met_pad_width/2),
+            pya.DPoint(met_center_x + self.met_length/2, self.l_ground_bottom - self.extra_cap_height),
         ]
         met_wire_region = pya.DPolygon(met_wire_pts)
         met_wire_region = pya.Region(met_wire_region.to_itype(self.layout.dbu))
@@ -174,4 +183,11 @@ class MetRfs(Element):
         
         self.refpoints["rlc_junction_signal"] = pya.DPoint(met_center_x - self.met_length, met_center_y)
         self.refpoints["rlc_junction_ground"] = pya.DPoint(met_center_x + self.met_length, met_center_y)
+
+        # Center of the extra planar capacitor pad, for Q3D capacitance-to-ground measurements
+        # (see met_rfs_extra_cap_q3d_sim.py, used together with include_inductor=False).
+        extra_cap_center_x = (self.cap_ground_gap_left + self.extra_cap_spacing +
+                              self.cap_ground_gap_right - self.extra_cap_spacing) / 2
+        extra_cap_center_y = self.l_ground_bottom - self.extra_cap_height / 2
+        self.refpoints["extra_cap_signal"] = pya.DPoint(extra_cap_center_x, extra_cap_center_y)
 

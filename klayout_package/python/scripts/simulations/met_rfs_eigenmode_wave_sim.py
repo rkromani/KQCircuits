@@ -148,6 +148,8 @@ class MetRfsWaveSim(BaseSimClass_Wave):
 
 parser = argparse.ArgumentParser(description="MetRfs eigenmode + wave simulation workflow")
 parser.add_argument("--no-gui", action="store_true", help="Don't open KLayout to view results")
+parser.add_argument("--eigenmode-only", action="store_true",
+                    help="Only run eigenmode simulations, skip wave/S21 simulations")
 parser.add_argument("--sweep-width", type=float, default=1.0,
                     help="Frequency sweep width around eigenfrequency in GHz (default: 1.0)")
 parser.add_argument("--eigenmode-mode", type=str, default="each", choices=["each", "shared"],
@@ -179,26 +181,26 @@ shared_params = {
     "enable_rlc": True,          # Required: creates ground-plane gaps at RLC junction
     "feedline_cutout_bool": False,
     # RLC values for the junction (adjust to match device)
-    "rlc_junction_c": 10,        # fF, junction capacitance
-    "rlc_junction_l": 10,        # nH, junction (Josephson) inductance
-    "rlc_junction_r": 0,         # Ohm, 0 = lossless; reduce to add internal loss
+    "rlc_junction_c": 0,#10,        # fF, junction capacitance
+    "rlc_junction_l": 1e9,#10,        # nH, junction (Josephson) inductance
+    "rlc_junction_r": 5e6,         # Ohm, 0 = lossless; reduce to add internal loss
 }
 
 eigenmode_sim_parameters = {
     "name": "met_rfs_eigenmode",
     "use_internal_ports": True,
     "use_ports": True,
-    "box": pya.DBox(pya.DPoint(-950, -1800), pya.DPoint(950, 300)),
+    "box": pya.DBox(pya.DPoint(-950, -2600), pya.DPoint(950, 300)),
     **shared_params,
 }
 
 eigenmode_solution_parameters = {
     "ansys_tool": "eigenmode",
-    "n_modes": 3,
-    "min_frequency": 4,
+    "n_modes": 1,
+    "min_frequency": 1.25,
     "max_delta_f": 1,
     "maximum_passes": 20,
-    "minimum_converged_passes": 2,
+    "minimum_converged_passes": 1,
     "mesh_size": {
         "1t1_mesh_1": 7,
     },
@@ -214,7 +216,7 @@ wave_sim_parameters = {
     "name": "met_rfs_wave",
     "use_internal_ports": False,  # Edge ports for S-parameters
     "use_ports": True,
-    "box": pya.DBox(pya.DPoint(-950, -1800), pya.DPoint(950, 300)),
+    "box": pya.DBox(pya.DPoint(-950, -2600), pya.DPoint(950, 300)),
     "port_size": 100,
     **shared_params,
 }
@@ -225,12 +227,12 @@ wave_solution_parameters = {
     "max_delta_s": 0.01,
     "sweep_start": 5.5,    # placeholder - updated by eigenmode result
     "sweep_end": 6.5,      # placeholder - updated by eigenmode result
-    "sweep_count": 5001,
+    "sweep_count": 2001,
     "sweep_type": "interpolating",
     "maximum_passes": 10,
     "minimum_converged_passes": 1,
     "mesh_size": {
-        "1t1_mesh_1": 3,
+        "1t1_mesh_1": 2,
     },
 }
 
@@ -249,7 +251,10 @@ sweep_params = {
     # "rlc_junction_l": [8.0, 10.0, 12.0],
     # Sweep resistance to model internal loss (smaller R = lower Q = broader S21 dip)
     # "rlc_junction_r": [0, 5e4, 1e5],
-    "rlc_junction_l": [10.0],
+    #"rlc_junction_l": [0.0, 2.5, 5.0, 7.5, 10.0, 20.0],
+    #"rlc_junction_c": [0.0, 10.0, 50.0, 80.0, 100.0, 200.0],
+    "l_coupling_distance": [40, 160]
+    #"extra_cap_height": [0.0, 10, 20, 40, 60, 80.0]
 }
 
 # ===========================
@@ -259,31 +264,40 @@ sweep_params = {
 print("\n" + "="*70)
 print("MetRfs Eigenmode + Wave Simulation Workflow")
 print("="*70)
-print(f"Mode: {args.eigenmode_mode}")
-print(f"Sweep width: +/- {args.sweep_width/2} GHz around eigenfrequency")
+print(f"Mode: {'eigenmode only' if args.eigenmode_only else args.eigenmode_mode}")
+if not args.eigenmode_only:
+    print(f"Sweep width: +/- {args.sweep_width/2} GHz around eigenfrequency")
 print("="*70 + "\n")
 
-if args.eigenmode_mode == "each":
+if args.eigenmode_only or args.eigenmode_mode == "each":
     eigenmode_sims = cross_sweep_simulation(layout, MetRfsEigenmodeSim, eigenmode_sim_parameters, sweep_params)
     print(f"Creating {len(eigenmode_sims)} eigenmode simulations (one per sweep point)")
 elif args.eigenmode_mode == "shared":
     eigenmode_sims = cross_sweep_simulation(layout, MetRfsEigenmodeSim, eigenmode_sim_parameters, {})
     print(f"Creating 1 shared eigenmode simulation (used for all sweep points)")
 
-wave_sims = cross_sweep_simulation(layout, MetRfsWaveSim, wave_sim_parameters, sweep_params)
-print(f"Creating {len(wave_sims)} wave simulations")
+if not args.eigenmode_only:
+    wave_sims = cross_sweep_simulation(layout, MetRfsWaveSim, wave_sim_parameters, sweep_params)
+    print(f"Creating {len(wave_sims)} wave simulations")
+else:
+    wave_sims = []
 
 # ===========================
 # Register with Database
 # ===========================
 
 db = SimulationDB()
+all_params = {**eigenmode_sim_parameters}
+all_export_params = {**eigenmode_solution_parameters, **eigenmode_export_parameters}
+if not args.eigenmode_only:
+    all_params.update(wave_sim_parameters)
+    all_export_params.update({**wave_solution_parameters, **wave_export_parameters})
+
 db_folders = db.register_simulations(
     simulations=eigenmode_sims + wave_sims,
     design_name="met_rfs",
-    sim_parameters={**eigenmode_sim_parameters, **wave_sim_parameters},
-    export_parameters={**eigenmode_solution_parameters, **eigenmode_export_parameters,
-                       **wave_solution_parameters, **wave_export_parameters},
+    sim_parameters=all_params,
+    export_parameters=all_export_params,
     output_folder=dir_path
 )
 
@@ -306,7 +320,8 @@ for sim in wave_sims:
     wave_json_files.append(json_path)
 
 print(f"Exported {len(eigenmode_json_files)} eigenmode JSON files")
-print(f"Exported {len(wave_json_files)} wave JSON files")
+if not args.eigenmode_only:
+    print(f"Exported {len(wave_json_files)} wave JSON files")
 
 # ===========================
 # Create Batch File
@@ -315,7 +330,8 @@ print(f"Exported {len(wave_json_files)} wave JSON files")
 print("\nCreating batch file...")
 
 bat_file = dir_path / "simulation.bat"
-custom_script = Path(__file__).parent / "ansys" / "eigenmode_wave_batch.py"
+eigenmode_wave_script = Path(__file__).parent / "ansys" / "eigenmode_wave_batch.py"
+batch_simulate_script = Path(__file__).parent / "ansys" / "batch_import_and_simulate.py"
 
 if isinstance(db_folders, dict) and db_folders:
     first_sim_folder = list(db_folders.values())[0]
@@ -327,32 +343,38 @@ else:
 
 with open(bat_file, "w") as f:
     f.write("@echo off\n")
-    f.write("title MetRfs Eigenmode + Wave Simulations\n")
     f.write("set ANS_USE_ISOLATED_CLIPBOARD=1\n\n")
 
-    if args.eigenmode_mode == "each":
+    if args.eigenmode_only:
+        f.write("title MetRfs Eigenmode Simulations\n")
+        f.write(f"echo Running {len(eigenmode_sims)} eigenmode simulation(s) in one ANSYS session...\n\n")
+        all_jsons = ";".join(str(p) for p in eigenmode_json_files)
+        f.write(f'"{ANSYS_EXECUTABLE}" -scriptargs "{all_jsons}" -RunScript "{batch_simulate_script}"\n')
+    elif args.eigenmode_mode == "each":
+        f.write("title MetRfs Eigenmode + Wave Simulations\n")
         f.write(f"echo Running {len(wave_sims)} eigenmode + wave pairs...\n")
         f.write(f"echo Sweep width: +/- {args.sweep_width/2} GHz\n\n")
         for i, (eigen_json, wave_json) in enumerate(zip(eigenmode_json_files, wave_json_files)):
             arg = f"{eigen_json};{wave_json};{args.sweep_width}"
             f.write(f"echo Simulation {i+1}/{len(wave_sims)}\n")
-            f.write(f'"{ANSYS_EXECUTABLE}" -scriptargs "{arg}" -RunScript "{custom_script}"\n')
+            f.write(f'"{ANSYS_EXECUTABLE}" -scriptargs "{arg}" -RunScript "{eigenmode_wave_script}"\n')
             f.write("echo.\n")
     elif args.eigenmode_mode == "shared":
+        f.write("title MetRfs Eigenmode + Wave Simulations\n")
         f.write(f"echo Running 1 shared eigenmode + {len(wave_sims)} wave simulations...\n")
         f.write(f"echo Sweep width: +/- {args.sweep_width/2} GHz\n\n")
         shared_eigenmode_json = eigenmode_json_files[0]
         for i, wave_json in enumerate(wave_json_files):
             arg = f"{shared_eigenmode_json};{wave_json};{args.sweep_width}"
             f.write(f"echo Simulation {i+1}/{len(wave_sims)}\n")
-            f.write(f'"{ANSYS_EXECUTABLE}" -scriptargs "{arg}" -RunScript "{custom_script}"\n')
+            f.write(f'"{ANSYS_EXECUTABLE}" -scriptargs "{arg}" -RunScript "{eigenmode_wave_script}"\n')
             f.write("echo.\n")
 
     f.write("\necho ========================================\n")
     f.write("echo All ANSYS simulations complete!\n")
     f.write("echo ========================================\n\n")
 
-    if sweep_folder:
+    if not args.eigenmode_only and sweep_folder:
         for i, wave_sim in enumerate(wave_sims):
             wave_name = wave_sim.name
             eigen_name = eigenmode_sims[i].name if args.eigenmode_mode == "each" else eigenmode_sims[0].name
@@ -370,7 +392,7 @@ with open(bat_file, "w") as f:
         python_exe = sys.executable
         finalize_script = Path(__file__).parents[4] / "simulations_database" / "tools" / "finalize_and_fit.py"
         f.write(f'\n"{python_exe}" "{finalize_script}" "{sweep_folder}"\n')
-    else:
+    elif not args.eigenmode_only:
         f.write("echo WARNING: Could not determine database folder for post-processing\n")
 
     f.write("\ntimeout /t 30\n")
@@ -387,7 +409,10 @@ print(f"\n{'='*70}")
 print(f"EXPORT COMPLETE")
 print(f"{'='*70}")
 print(f"Output: {dir_path}")
-print(f"Eigenmode sims: {len(eigenmode_sims)}, Wave sims: {len(wave_sims)}")
+if args.eigenmode_only:
+    print(f"Eigenmode sims: {len(eigenmode_sims)} (eigenmode only)")
+else:
+    print(f"Eigenmode sims: {len(eigenmode_sims)}, Wave sims: {len(wave_sims)}")
 print(f"Next step: cd {dir_path} && simulation.bat")
 print(f"{'='*70}\n")
 

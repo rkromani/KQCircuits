@@ -65,6 +65,7 @@ class MetCircle(Element):
     rlc_coupler_c = Param(pdt.TypeDouble, "Coupling capacitor value for RLC model", 8.8, unit="fF")
     rlc_met_c = Param(pdt.TypeDouble, "MET capacitor value for RLC model", 154, unit="fF")
     rlc_met_l = Param(pdt.TypeDouble, "MET inductor value for RLC model", 8.1, unit="nH")
+    rlc_met_r = Param(pdt.TypeDouble, "MET resistance value for RLC model", 1e7, unit="Ohm")
 
     n = Param(pdt.TypeInt, "Number of points for rounding", 64)
 
@@ -178,16 +179,16 @@ class MetCircle(Element):
             rlc_met_region
         )
 
-        """mesh_coupler_pts = [
-            pya.DPoint(self.fin_center_spacing/2 + self.coupler_lead_in - self.res_coupling_length, self.a + self.b),
-            pya.DPoint(self.fin_center_spacing/2 + self.coupler_lead_in, self.a + self.b),
-            pya.DPoint(self.fin_center_spacing/2 + self.coupler_lead_in, -self.res_coupling_spacing -2*self.a - 2*self.b),
-            pya.DPoint(self.fin_center_spacing/2 + self.coupler_lead_in - self.res_coupling_length, -self.res_coupling_spacing -2*self.a - 2*self.b),
+        mesh_coupler_pts = [
+            pya.DPoint(self.coupler_end_x + self.coupler_lead_in - self.res_coupling_length , self.a + self.b),
+            pya.DPoint(self.coupler_end_x + self.coupler_lead_in, self.a + self.b),
+            pya.DPoint(self.coupler_end_x + self.coupler_lead_in, -self.res_coupling_spacing -2*self.a - 2*self.b),
+            pya.DPoint(self.coupler_end_x + self.coupler_lead_in - self.res_coupling_length, -self.res_coupling_spacing -2*self.a - 2*self.b),
             ]
         mesh_coupler_region = pya.Region(pya.DPolygon(mesh_coupler_pts).to_itype(self.layout.dbu))
         self.cell.shapes(self.get_layer("mesh_1")).insert(
             mesh_coupler_region
-        )"""
+        )
 
         # Feedline ports for wave simulations
         self.add_port("feedline_a", pya.DPoint(-self.feedline_length/2, 0), pya.DVector(-1, 0))

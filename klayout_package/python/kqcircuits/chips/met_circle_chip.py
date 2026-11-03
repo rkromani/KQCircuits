@@ -26,6 +26,7 @@ from kqcircuits.elements.waveguide_coplanar import WaveguideCoplanar
 from kqcircuits.elements.waveguide_composite import WaveguideComposite, Node
 from kqcircuits.elements.waveguide_coplanar_splitter import WaveguideCoplanarSplitter, t_cross_parameters
 from kqcircuits.elements.met_circle import MetCircle
+from kqcircuits.junctions.rkr_bridge_junction_2 import RKRBridge2
 from kqcircuits.util.parameters import Param, pdt, add_parameters_from, add_parameter
 from kqcircuits.test_structures.profilometer import Profilometer
 from kqcircuits.util.label import produce_label, LabelOrigin
@@ -50,7 +51,7 @@ import numpy as np
     frames_dice_width=[50, 50],
     name_brand="RKR",
     name_brand_size = 200, 
-    name_chip="FM1",
+    name_chip="MC",
     frames_marker_dist=[250, 250],
     name_mask="tt",
     name_copy="",
@@ -155,7 +156,7 @@ class MetCircleChip(Chip):
 
         produce_label(
             self.cell,
-            label="R K Romani + TFL",
+            label="R K Romani",
             location=pya.DPoint(test_structure_region_x - 320, test_structure_region_y - 150),
             origin=LabelOrigin.TOPLEFT,
             origin_offset=0,
@@ -163,18 +164,6 @@ class MetCircleChip(Chip):
             layers=[self.face()["base_metal_gap_wo_grid"]],
             layer_protection=self.face()["ground_grid_avoidance"],
             size=50,
-        )
-
-        produce_label(
-            self.cell,
-            label="UCSB",
-            location=pya.DPoint(test_structure_region_x - 350, test_structure_region_y + 420),
-            origin=LabelOrigin.TOPLEFT,
-            origin_offset=0,
-            margin=10,
-            layers=[self.face()["base_metal_gap_wo_grid"]],
-            layer_protection=self.face()["ground_grid_avoidance"],
-            size=200,
         )
 
 
@@ -230,7 +219,6 @@ class MetCircleChip(Chip):
                     feedline_cutout_bool=False,
                     **element_params[i],
                 )
-
             
             """produce_label(
                 self.cell,
@@ -255,6 +243,52 @@ class MetCircleChip(Chip):
                 size=50,
             )"""
 
+            i += 1
+
+        chip_center_x = 7500/2
+        junction_center_y = 800
+        n_junction_x = 5
+        n_junction_y = 3
+        spacing_x = 500
+        spacing_y = 300
+        start_x = chip_center_x - n_junction_x/2 * spacing_x
+        start_y = junction_center_y - n_junction_y/2 * spacing_y
+        stop_x = chip_center_x + (n_junction_x)/2 * spacing_x
+        stop_y = junction_center_y + (n_junction_y)/2 * spacing_y
+        pos_x = np.linspace(start_x, stop_x, n_junction_x)
+        pos_y = np.linspace(start_y, stop_y, n_junction_y)
+        bridge_widths = np.asarray([0.15, 0.2, 0.25])
+
+        i = 0
+        while i < n_junction_x:
+            j = 0
+            while j < n_junction_y:
+                coord = pya.DTrans(1, False, pos_x[i], pos_y[j])
+
+                self.insert_cell(
+                    RKRBridge2, coord, f"JJ_{i}_{j}", 
+                    wiring_pad_bool=True,
+                    pad_height=6, pad_width=10, 
+                    palm_width=8, taper_base=10, 
+                    bridge_width=bridge_widths[j],
+                    bridge_length=4, 
+                    #**element_params[i],
+                )
+
+                if i == 0:
+                    produce_label(
+                        self.cell,
+                        label=str(bridge_widths[j]) + " x " + str(4),
+                        location=pya.DPoint(pos_x[i], pos_y[j] - 150),
+                        origin=LabelOrigin.TOPLEFT,
+                        origin_offset=0,
+                        margin=10,
+                        layers=[self.face()["base_metal_gap_wo_grid"]],
+                        layer_protection=self.face()["ground_grid_avoidance"],
+                        size=50,
+                    )
+
+                j += 1
             i += 1
 
         launcher_feed_middle = ((-self.refpoints["W1_port"].x + self.refpoints["E1_port"].x)/2)

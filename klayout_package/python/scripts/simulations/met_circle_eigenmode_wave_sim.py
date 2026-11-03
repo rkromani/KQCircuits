@@ -79,7 +79,7 @@ class MetCircleEigenmodeSim(BaseSimClass):
             ground_location=self.refpoints["rlc_met_ground"],
             capacitance=self.rlc_met_c * 1e-15,
             inductance=self.rlc_met_l * 1e-9,
-            resistance=0,
+            resistance=self.rlc_met_r,
             lumped_element=True,
             rlc_type="parallel",
         ))
@@ -124,7 +124,7 @@ class MetCircleWaveSim(BaseSimClass):
             ground_location=self.refpoints["rlc_met_ground"],
             capacitance=self.rlc_met_c * 1e-15,
             inductance=self.rlc_met_l * 1e-9,
-            resistance=0,
+            resistance=self.rlc_met_r,
             lumped_element=True,
             rlc_type="parallel",
         ))
@@ -167,6 +167,7 @@ shared_params = {
     # RLC values (adjust to match device)
     "rlc_met_c": 60,   # fF
     "rlc_met_l": 16.5,   # nH
+    "rlc_met_r": 1e7,   # Ohm
 }
 
 eigenmode_sim_parameters = {
@@ -179,8 +180,8 @@ eigenmode_sim_parameters = {
 
 eigenmode_solution_parameters = {
     "ansys_tool": "eigenmode",
-    "n_modes": 3,
-    "min_frequency": 5,
+    "n_modes": 2,
+    "min_frequency": 6.5,
     "max_delta_f": 1,
     "maximum_passes": 20,
     "minimum_converged_passes": 2,
@@ -210,7 +211,7 @@ wave_solution_parameters = {
     "max_delta_s": 0.01,
     "sweep_start": 5.5,   # placeholder - updated by eigenmode result
     "sweep_end": 6.5,     # placeholder - updated by eigenmode result
-    "sweep_count": 5001,
+    "sweep_count": 1001,
     "sweep_type": "interpolating",
     "maximum_passes": 10,
     "minimum_converged_passes": 1,
